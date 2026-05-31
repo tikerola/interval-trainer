@@ -1,1 +1,19 @@
-node_modules
+# dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# environment files
+.env
+.env.local
+.env.*.local
+
+# Claude Code local settings (not project-level CLAUDE.md)
+.claude/settings.local.json
+
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
