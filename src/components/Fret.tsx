@@ -80,7 +80,7 @@ export default function Fret({ stringIndex, fretNumber }: Props) {
         isDisabled ? "cursor-default" : "cursor-pointer"
       }`}
       style={{
-        minHeight: "40px",
+        minHeight: "30px",
         opacity: active && !inWindow ? 0.28 : 1,
         transition: "opacity 0.3s ease-out",
       }}

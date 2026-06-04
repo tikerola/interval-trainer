@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   // Locally it is empty so the dev server works unchanged.
   basePath: process.env.BASE_PATH ?? "",
   images: { unoptimized: true },
+  devIndicators: false,
 };
 
 export default nextConfig;

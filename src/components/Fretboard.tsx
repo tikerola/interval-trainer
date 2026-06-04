@@ -32,8 +32,9 @@ export default function Fretboard() {
 
       {/* Fretboard body */}
       <div
-        className="relative rounded-lg overflow-hidden border border-stone-800/80"
+        className="relative rounded-r-lg overflow-hidden border border-stone-800/80"
         style={{
+          clipPath: "polygon(0% 7%, 100% 0%, 100% 100%, 0% 93%)",
           background: `
             repeating-linear-gradient(180deg,
               transparent 0px,

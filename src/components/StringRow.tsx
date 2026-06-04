@@ -67,8 +67,8 @@ export default function StringRow({ stringIndex, fretCount, isFirst, isLast }: P
     <div
       className="relative flex items-center"
       style={{
-        paddingTop: isFirst ? "12px" : "4px",
-        paddingBottom: isLast ? "12px" : "4px",
+        paddingTop: isFirst ? "8px" : "2px",
+        paddingBottom: isLast ? "8px" : "2px",
       }}
     >
       {/* String label */}
@@ -77,13 +77,11 @@ export default function StringRow({ stringIndex, fretCount, isFirst, isLast }: P
       </div>
 
       {/* The string line */}
-      {/* top must compensate for asymmetric padding: flex items-center centers within
-          the content box, but `50%` is relative to the full box including padding.
-          Offset = (paddingTop - paddingBottom) / 2 */}
+      {/* top compensates for asymmetric padding on first/last rows: offset = (paddingTop - paddingBottom) / 2 */}
       <div
         className="absolute left-10 right-0 pointer-events-none z-10"
         style={{
-          top: isFirst ? "calc(50% + 4px)" : isLast ? "calc(50% - 4px)" : "50%",
+          top: isFirst ? "calc(50% + 3px)" : isLast ? "calc(50% - 3px)" : "50%",
           transform: "translateY(-50%)",
           ...getStringStyle(stringIndex, stringHeight),
         }}
