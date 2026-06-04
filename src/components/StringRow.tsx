@@ -13,6 +13,53 @@ interface Props {
 const STRING_HEIGHTS = [3.5, 3, 2.5, 2, 1.5, 1];
 const STRING_LABELS = ["E", "A", "D", "G", "B", "e"];
 
+// Strings 0–3 (low E, A, D, G) are nickel-wound; 4–5 (B, e) are plain steel
+const WOUND = new Set([0, 1, 2, 3]);
+
+function getStringStyle(stringIndex: number, height: number): React.CSSProperties {
+  if (WOUND.has(stringIndex)) {
+    // Nickel-wound: warm bronze-silver with a coil texture overlay
+    return {
+      height: `${height}px`,
+      background: `
+        repeating-linear-gradient(90deg,
+          transparent 0px,
+          transparent 2px,
+          rgba(0,0,0,0.10) 2px,
+          rgba(0,0,0,0.10) 3px
+        ),
+        linear-gradient(180deg,
+          #f0e8cc 0%,
+          #c8a870 12%,
+          #8c5e2a 38%,
+          #6a4018 52%,
+          #8c5e2a 65%,
+          #c8a870 88%,
+          #f0e8cc 100%
+        )
+      `,
+      boxShadow: `0 ${Math.ceil(height / 2)}px ${height * 2}px rgba(0,0,0,0.65), 0 0 ${height}px rgba(200,170,100,0.18)`,
+    };
+  } else {
+    // Plain steel: cool silver, sharper highlight
+    return {
+      height: `${height}px`,
+      background: `
+        linear-gradient(180deg,
+          #f8f8f8 0%,
+          #d4d4d4 12%,
+          #909090 38%,
+          #707070 52%,
+          #909090 65%,
+          #d4d4d4 88%,
+          #f8f8f8 100%
+        )
+      `,
+      boxShadow: `0 ${Math.ceil(height / 2)}px ${height * 2}px rgba(0,0,0,0.55), 0 0 ${height}px rgba(210,210,210,0.15)`,
+    };
+  }
+}
+
 export default function StringRow({ stringIndex, fretCount, isFirst, isLast }: Props) {
   const stringHeight = STRING_HEIGHTS[stringIndex];
 
@@ -36,11 +83,9 @@ export default function StringRow({ stringIndex, fretCount, isFirst, isLast }: P
       <div
         className="absolute left-10 right-0 pointer-events-none z-10"
         style={{
-          height: `${stringHeight}px`,
           top: isFirst ? "calc(50% + 4px)" : isLast ? "calc(50% - 4px)" : "50%",
           transform: "translateY(-50%)",
-          background: "linear-gradient(180deg, #d4c5a0 0%, #a08060 50%, #d4c5a0 100%)",
-          boxShadow: `0 0 ${stringHeight}px rgba(200,180,140,0.3)`,
+          ...getStringStyle(stringIndex, stringHeight),
         }}
       />
 
