@@ -1,8 +1,6 @@
 "use client";
 
 import Fret from "./Fret";
-import { useShallow } from "zustand/react/shallow";
-import { useExerciseStore } from "@/store/exerciseStore";
 
 interface Props {
   stringIndex: number;
@@ -18,19 +16,12 @@ const STRING_LABELS = ["E", "A", "D", "G", "B", "e"];
 export default function StringRow({ stringIndex, fretCount, isFirst, isLast }: Props) {
   const stringHeight = STRING_HEIGHTS[stringIndex];
 
-  const { active, correctAnswers } = useExerciseStore(
-    useShallow((s) => ({ active: s.active, correctAnswers: s.correctAnswers }))
-  );
-
-  const isLocked = active && correctAnswers.some((a) => a.stringIndex === stringIndex);
-
   return (
     <div
-      className="relative flex items-center transition-opacity duration-300"
+      className="relative flex items-center"
       style={{
         paddingTop: isFirst ? "12px" : "4px",
         paddingBottom: isLast ? "12px" : "4px",
-        opacity: isLocked ? 0.4 : 1,
       }}
     >
       {/* String label */}

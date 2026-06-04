@@ -4,23 +4,25 @@ import { useShallow } from "zustand/react/shallow";
 import { useExerciseStore } from "@/store/exerciseStore";
 
 export default function ExerciseResults() {
-  const { points, mistakes, startedAt, stoppedAt, reset, startExercise } = useExerciseStore(
-    useShallow((s) => ({
-      points: s.points,
-      mistakes: s.mistakes,
-      startedAt: s.startedAt,
-      stoppedAt: s.stoppedAt,
-      reset: s.reset,
-      startExercise: s.startExercise,
-    }))
-  );
+  const { points, correctCount, mistakes, startedAt, stoppedAt, reset, startExercise } =
+    useExerciseStore(
+      useShallow((s) => ({
+        points: s.points,
+        correctCount: s.correctCount,
+        mistakes: s.mistakes,
+        startedAt: s.startedAt,
+        stoppedAt: s.stoppedAt,
+        reset: s.reset,
+        startExercise: s.startExercise,
+      }))
+    );
 
   const elapsedMs = stoppedAt - startedAt;
   const seconds = Math.floor(elapsedMs / 1000);
   const minutes = Math.floor(seconds / 60);
   const timeStr = minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
-  const totalAttempts = points + mistakes;
-  const accuracy = totalAttempts > 0 ? Math.round((points / totalAttempts) * 100) : 100;
+  const totalAttempts = correctCount + mistakes;
+  const accuracy = totalAttempts > 0 ? Math.round((correctCount / totalAttempts) * 100) : 100;
 
   return (
     <div className="w-full max-w-5xl">
@@ -31,13 +33,14 @@ export default function ExerciseResults() {
               Session Complete
             </p>
             <p className="text-stone-500 text-sm">
-              Here's how you did
+              Here&apos;s how you did
             </p>
           </div>
 
           <div className="flex gap-6">
-            <Stat label="Points" value={String(points)} accent />
+            <Stat label="Score" value={String(points)} accent={points > 0} />
             <Stat label="Accuracy" value={`${accuracy}%`} accent={accuracy >= 90} />
+            <Stat label="Correct" value={String(correctCount)} />
             <Stat label="Mistakes" value={String(mistakes)} />
             <Stat label="Time" value={timeStr} />
           </div>

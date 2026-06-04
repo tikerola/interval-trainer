@@ -2,12 +2,13 @@ import { create } from "zustand";
 import type { Note } from "@/lib/music/notes";
 import { NOTES } from "@/lib/music/notes";
 import { getIntervalNote } from "@/lib/music/intervals";
-import { isCorrectExerciseAnswer } from "@/lib/music/exercise";
+import {
+  isCorrectExerciseAnswer,
+  generateFretWindow,
+  type FretWindow,
+} from "@/lib/music/exercise";
 
-export interface CorrectAnswer {
-  stringIndex: number;
-  fret: number;
-}
+export type { FretWindow };
 
 export interface ExerciseState {
   rootNote: Note;
@@ -15,16 +16,23 @@ export interface ExerciseState {
   targetNote: Note;
   active: boolean;
   stopped: boolean;
-  correctAnswers: CorrectAnswer[];
-  mistakes: number;
+  fretWindow: FretWindow | null;
+  windowWidth: number;
+  duration: number; // seconds
+  roundTransitioning: boolean;
+  lastCorrectAnswer: { stringIndex: number; fret: number } | null;
   points: number;
+  correctCount: number;
+  mistakes: number;
   startedAt: number;
   stoppedAt: number;
 
   setRootNote: (note: Note) => void;
   setInterval: (semitones: number) => void;
+  setWindowWidth: (w: number) => void;
+  setDuration: (s: number) => void;
   startExercise: () => void;
-  submitAnswer: (stringIndex: number, fret: number) => "correct" | "wrong" | "already_answered";
+  submitAnswer: (stringIndex: number, fret: number) => "correct" | "wrong" | "disabled";
   stop: () => void;
   reset: () => void;
 }
@@ -40,9 +48,14 @@ export const useExerciseStore = create<ExerciseState>((set, get) => ({
   targetNote: "G",
   active: false,
   stopped: false,
-  correctAnswers: [],
-  mistakes: 0,
+  fretWindow: null,
+  windowWidth: 4,
+  duration: 120,
+  roundTransitioning: false,
+  lastCorrectAnswer: null,
   points: 0,
+  correctCount: 0,
+  mistakes: 0,
   startedAt: 0,
   stoppedAt: 0,
 
@@ -52,45 +65,60 @@ export const useExerciseStore = create<ExerciseState>((set, get) => ({
   setInterval: (semitones) =>
     set({ intervalSemitones: semitones, targetNote: getIntervalNote(get().rootNote, semitones) }),
 
-  startExercise: () =>
+  setWindowWidth: (w) => set({ windowWidth: w }),
+
+  setDuration: (s) => set({ duration: s }),
+
+  startExercise: () => {
+    const { rootNote, intervalSemitones, windowWidth } = get();
+    const targetNote = getIntervalNote(rootNote, intervalSemitones);
+    const fretWindow = generateFretWindow(targetNote, windowWidth);
     set({
       active: true,
       stopped: false,
-      correctAnswers: [],
-      mistakes: 0,
+      targetNote,
+      fretWindow,
+      roundTransitioning: false,
+      lastCorrectAnswer: null,
       points: 0,
+      correctCount: 0,
+      mistakes: 0,
       startedAt: Date.now(),
       stoppedAt: 0,
-    }),
+    });
+  },
 
   submitAnswer: (stringIndex, fret) => {
-    const { targetNote, correctAnswers, mistakes, points, active } = get();
-    if (!active) return "wrong";
-
-    const alreadyAnswered = correctAnswers.some((a) => a.stringIndex === stringIndex);
-    if (alreadyAnswered) return "already_answered";
+    const { active, roundTransitioning, fretWindow, targetNote, points, correctCount, mistakes } =
+      get();
+    if (!active || roundTransitioning) return "disabled";
+    if (!fretWindow || fret < fretWindow.start || fret > fretWindow.end) return "disabled";
 
     const correct = isCorrectExerciseAnswer(targetNote, stringIndex, fret);
 
     if (correct) {
-      const newAnswers = [...correctAnswers, { stringIndex, fret }];
-      const newPoints = points + 1;
-
-      if (newAnswers.length === 6) {
-        set({ correctAnswers: newAnswers, points: newPoints });
-        // Auto-advance after brief pause to let green dots register
-        setTimeout(() => {
-          if (!get().active) return;
-          const newRoot = randomDifferentNote(get().rootNote);
-          const newTarget = getIntervalNote(newRoot, get().intervalSemitones);
-          set({ rootNote: newRoot, targetNote: newTarget, correctAnswers: [] });
-        }, 700);
-      } else {
-        set({ correctAnswers: newAnswers, points: newPoints });
-      }
+      set({
+        points: points + 1,
+        correctCount: correctCount + 1,
+        roundTransitioning: true,
+        lastCorrectAnswer: { stringIndex, fret },
+      });
+      setTimeout(() => {
+        if (!get().active) return;
+        const newRoot = randomDifferentNote(get().rootNote);
+        const newTarget = getIntervalNote(newRoot, get().intervalSemitones);
+        const newWindow = generateFretWindow(newTarget, get().windowWidth);
+        set({
+          rootNote: newRoot,
+          targetNote: newTarget,
+          fretWindow: newWindow,
+          roundTransitioning: false,
+          lastCorrectAnswer: null,
+        });
+      }, 700);
       return "correct";
     } else {
-      set({ mistakes: mistakes + 1 });
+      set({ mistakes: mistakes + 1, points: points - 1 });
       return "wrong";
     }
   },
@@ -100,15 +128,19 @@ export const useExerciseStore = create<ExerciseState>((set, get) => ({
       active: false,
       stopped: true,
       stoppedAt: Date.now(),
+      roundTransitioning: false,
     }),
 
   reset: () =>
     set({
       active: false,
       stopped: false,
-      correctAnswers: [],
-      mistakes: 0,
+      fretWindow: null,
+      roundTransitioning: false,
+      lastCorrectAnswer: null,
       points: 0,
+      correctCount: 0,
+      mistakes: 0,
       startedAt: 0,
       stoppedAt: 0,
     }),

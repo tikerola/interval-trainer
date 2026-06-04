@@ -7,32 +7,47 @@ import { NOTES } from "@/lib/music/notes";
 import { INTERVALS } from "@/lib/music/intervals";
 import type { Note } from "@/lib/music/notes";
 
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export default function ExerciseHub() {
   const [showTarget, setShowTarget] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(120);
 
   const {
     rootNote,
     intervalSemitones,
     targetNote,
     active,
-    correctAnswers,
     points,
+    windowWidth,
+    duration,
     setRootNote,
     setInterval,
+    setWindowWidth,
+    setDuration,
     startExercise,
     stop,
+    startedAt,
   } = useExerciseStore(
     useShallow((s) => ({
       rootNote: s.rootNote,
       intervalSemitones: s.intervalSemitones,
       targetNote: s.targetNote,
       active: s.active,
-      correctAnswers: s.correctAnswers,
       points: s.points,
+      windowWidth: s.windowWidth,
+      duration: s.duration,
       setRootNote: s.setRootNote,
       setInterval: s.setInterval,
+      setWindowWidth: s.setWindowWidth,
+      setDuration: s.setDuration,
       startExercise: s.startExercise,
       stop: s.stop,
+      startedAt: s.startedAt,
     }))
   );
 
@@ -41,7 +56,26 @@ export default function ExerciseHub() {
     if (active) setShowTarget(false);
   }, [active]);
 
+  // Countdown timer — auto-stops when time runs out
+  useEffect(() => {
+    if (!active) return;
+
+    const tick = () => {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      const remaining = Math.max(0, duration - elapsed);
+      setTimeLeft(remaining);
+      if (remaining <= 0) stop();
+    };
+
+    tick();
+    const id = window.setInterval(tick, 500);
+    return () => window.clearInterval(id);
+  }, [active, startedAt, duration, stop]);
+
   const selectedInterval = INTERVALS.find((i) => i.semitones === intervalSemitones);
+
+  const timerColor =
+    timeLeft <= 10 ? "text-red-400" : timeLeft <= 30 ? "text-orange-400" : "text-amber-300";
 
   return (
     <div className="w-full max-w-5xl">
@@ -102,34 +136,58 @@ export default function ExerciseHub() {
             </div>
           </div>
 
+          {/* Area Width */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs text-stone-500 tracking-wide">Area Width</label>
+            <select
+              value={windowWidth}
+              onChange={(e) => setWindowWidth(Number(e.target.value))}
+              disabled={active}
+              className="bg-stone-800 border border-stone-700 text-amber-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500/60 disabled:opacity-50 cursor-pointer min-w-[90px]"
+            >
+              {[3, 4, 5, 6].map((w) => (
+                <option key={w} value={w}>{w} frets</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Duration */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs text-stone-500 tracking-wide">Duration</label>
+            <select
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
+              disabled={active}
+              className="bg-stone-800 border border-stone-700 text-amber-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500/60 disabled:opacity-50 cursor-pointer min-w-[90px]"
+            >
+              <option value={60}>1 min</option>
+              <option value={120}>2 min</option>
+              <option value={180}>3 min</option>
+              <option value={300}>5 min</option>
+            </select>
+          </div>
+
           <div className="flex-1" />
 
           {/* Points counter */}
           {active && (
             <div className="flex flex-col gap-1.5 items-center">
-              <label className="text-xs text-stone-500 tracking-wide">Points</label>
-              <div className="text-2xl font-bold text-amber-300 tabular-nums min-w-[2.5rem] text-center">
+              <label className="text-xs text-stone-500 tracking-wide">Score</label>
+              <div
+                className="text-2xl font-bold tabular-nums min-w-[2.5rem] text-center transition-colors duration-200"
+                style={{ color: points < 0 ? "#f87171" : "#fcd34d" }}
+              >
                 {points}
               </div>
             </div>
           )}
 
-          {/* Round progress dots */}
+          {/* Countdown timer */}
           {active && (
             <div className="flex flex-col gap-1.5 items-center">
-              <label className="text-xs text-stone-500 tracking-wide">Round</label>
-              <div className="flex gap-1.5 items-center">
-                {Array.from({ length: 6 }, (_, i) => {
-                  const answered = correctAnswers.some((a) => a.stringIndex === i);
-                  return (
-                    <div
-                      key={i}
-                      className={`w-2.5 h-2.5 rounded-full transition-colors duration-200 ${
-                        answered ? "bg-emerald-400" : "bg-stone-700"
-                      }`}
-                    />
-                  );
-                })}
+              <label className="text-xs text-stone-500 tracking-wide">Time</label>
+              <div className={`text-2xl font-bold tabular-nums min-w-[3rem] text-center ${timerColor}`}>
+                {formatTime(timeLeft)}
               </div>
             </div>
           )}
@@ -155,13 +213,13 @@ export default function ExerciseHub() {
         {/* Active exercise hint */}
         {active && (
           <p className="mt-4 text-xs text-stone-500">
-            Find the{" "}
+            Find{" "}
             {showTarget ? (
               <span className="text-amber-300 font-medium">{targetNote}</span>
             ) : (
               <span className="text-stone-600 font-medium">[hidden]</span>
             )}{" "}
-            note on every string. ({selectedInterval?.label} from {rootNote})
+            in the highlighted area. ({selectedInterval?.label} from {rootNote})
           </p>
         )}
       </div>

@@ -22,27 +22,38 @@ export default function Fret({ stringIndex, fretNumber }: Props) {
 
   const { note } = getNoteAtPosition(stringIndex, fretNumber);
 
-  const { active, correctAnswers, submitAnswer } = useExerciseStore(
-    useShallow((s) => ({
-      active: s.active,
-      correctAnswers: s.correctAnswers,
-      submitAnswer: s.submitAnswer,
-    }))
-  );
+  const { active, fretWindow, roundTransitioning, lastCorrectAnswer, submitAnswer } =
+    useExerciseStore(
+      useShallow((s) => ({
+        active: s.active,
+        fretWindow: s.fretWindow,
+        roundTransitioning: s.roundTransitioning,
+        lastCorrectAnswer: s.lastCorrectAnswer,
+        submitAnswer: s.submitAnswer,
+      }))
+    );
 
-  const isCorrectlyAnswered = correctAnswers.some(
-    (a) => a.stringIndex === stringIndex && a.fret === fretNumber
-  );
-  const stringLocked = correctAnswers.some((a) => a.stringIndex === stringIndex);
+  const inWindow =
+    !active ||
+    !fretWindow ||
+    (fretNumber >= fretWindow.start && fretNumber <= fretWindow.end);
+
+  const isCorrectlyAnswered =
+    !!lastCorrectAnswer &&
+    lastCorrectAnswer.stringIndex === stringIndex &&
+    lastCorrectAnswer.fret === fretNumber;
+
+  const isDisabled = active && (!inWindow || roundTransitioning);
+  const isHoverable = active ? inWindow && !roundTransitioning : true;
 
   const handleClick = useCallback(() => {
     if (active) {
-      if (stringLocked) return;
+      if (isDisabled) return;
       const result = submitAnswer(stringIndex, fretNumber);
       if (result === "wrong") {
         setWrongFlash(true);
         if (wrongTimer.current) clearTimeout(wrongTimer.current);
-        wrongTimer.current = setTimeout(() => setWrongFlash(false), 1000);
+        wrongTimer.current = setTimeout(() => setWrongFlash(false), 900);
       }
     } else {
       // Free-mode: manipulate opacity directly on the DOM node — no React state,
@@ -61,14 +72,18 @@ export default function Fret({ stringIndex, fretNumber }: Props) {
         el.style.opacity = "0";
       }, 800);
     }
-  }, [active, stringLocked, submitAnswer, stringIndex, fretNumber]);
-
-  const isHoverable = active ? !stringLocked : true;
+  }, [active, isDisabled, submitAnswer, stringIndex, fretNumber]);
 
   return (
     <div
-      className="flex-1 flex items-center justify-center relative cursor-pointer group z-20"
-      style={{ minHeight: "40px" }}
+      className={`flex-1 flex items-center justify-center relative z-20 group ${
+        isDisabled ? "cursor-default" : "cursor-pointer"
+      }`}
+      style={{
+        minHeight: "40px",
+        opacity: active && !inWindow ? 0.28 : 1,
+        transition: "opacity 0.3s ease-out",
+      }}
       onClick={handleClick}
     >
       {/* Hover ring */}

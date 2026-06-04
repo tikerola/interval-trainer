@@ -2,6 +2,8 @@
 
 import StringRow from "./StringRow";
 import { OPEN_STRINGS } from "@/lib/music/notes";
+import { useShallow } from "zustand/react/shallow";
+import { useExerciseStore } from "@/store/exerciseStore";
 
 const FRET_COUNT = 15; // frets 1–15, open string (0) removed
 const FRET_MARKERS = [3, 5, 7, 9, 12, 15];
@@ -13,6 +15,10 @@ const DISPLAY_ORDER = [...Array(OPEN_STRINGS.length)].map(
 );
 
 export default function Fretboard() {
+  const { active, fretWindow } = useExerciseStore(
+    useShallow((s) => ({ active: s.active, fretWindow: s.fretWindow }))
+  );
+
   return (
     <div className="w-full max-w-5xl">
       {/* Top fret number labels */}
@@ -69,6 +75,19 @@ export default function Fretboard() {
             <div key={i} className="flex-1 border-r border-stone-600/50" />
           ))}
         </div>
+
+        {/* Active window highlight border — pointer-events-none so clicks pass through */}
+        {active && fretWindow && (
+          <div
+            className="absolute top-0 bottom-0 border border-amber-400/50 rounded-sm pointer-events-none z-[35]"
+            style={{
+              left: `calc(40px + ${fretWindow.start - 1} / ${FRET_COUNT} * (100% - 40px))`,
+              width: `calc(${fretWindow.end - fretWindow.start + 1} / ${FRET_COUNT} * (100% - 40px))`,
+              boxShadow: "inset 0 0 0 1px rgba(245,158,11,0.15), 0 0 12px rgba(245,158,11,0.12)",
+              transition: "left 0.35s ease-out, width 0.35s ease-out",
+            }}
+          />
+        )}
       </div>
 
       {/* Bottom position markers — fret numbers at marker positions, next to low E */}
