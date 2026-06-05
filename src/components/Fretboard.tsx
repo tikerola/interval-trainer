@@ -30,6 +30,9 @@ export default function Fretboard() {
         ))}
       </div>
 
+      {/* Fretboard body wrapper — highlight lives here as a sibling so it isn't clipped by the fretboard's own polygon */}
+      <div className="relative">
+
       {/* Fretboard body */}
       <div
         className="relative rounded-r-lg overflow-hidden border border-stone-800/80"
@@ -127,18 +130,28 @@ export default function Fretboard() {
           ))}
         </div>
 
-        {/* Active window highlight border */}
+      </div>
+
+        {/* Active window highlight — rendered as a sibling with a matching clipPath wrapper
+            so its borders trace the fretboard's slanted edges rather than being clipped away */}
         {active && fretWindow && (
           <div
-            className="absolute top-0 bottom-0 border border-amber-400/50 rounded-sm pointer-events-none z-[35]"
-            style={{
-              left: `calc(40px + ${fretWindow.start - 1} / ${FRET_COUNT} * (100% - 40px))`,
-              width: `calc(${fretWindow.end - fretWindow.start + 1} / ${FRET_COUNT} * (100% - 40px))`,
-              boxShadow:
-                "inset 0 0 0 1px rgba(245,158,11,0.15), 0 0 12px rgba(245,158,11,0.12)",
-              transition: "left 0.35s ease-out, width 0.35s ease-out",
-            }}
-          />
+            className="absolute inset-0 pointer-events-none z-[35]"
+            style={{ clipPath: "polygon(0% 7%, 100% 0%, 100% 100%, 0% 93%)" }}
+          >
+            <div
+              className="absolute top-0 bottom-0 rounded-sm"
+              style={{
+                left: `calc(40px + ${fretWindow.start - 1} / ${FRET_COUNT} * (100% - 40px))`,
+                width: `calc(${fretWindow.end - fretWindow.start + 1} / ${FRET_COUNT} * (100% - 40px))`,
+                border: "2px solid rgba(56, 189, 248, 0.85)",
+                background: "rgba(56, 189, 248, 0.07)",
+                boxShadow:
+                  "inset 0 0 0 1px rgba(56,189,248,0.15), 0 0 16px rgba(56,189,248,0.35)",
+                transition: "left 0.35s ease-out, width 0.35s ease-out",
+              }}
+            />
+          </div>
         )}
       </div>
 
