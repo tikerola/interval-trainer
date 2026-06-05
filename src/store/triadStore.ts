@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Note } from "@/lib/music/notes";
 import { DEFAULT_SCALE, isHeptatonic, type ScaleDefinition } from "@/lib/music/scales";
+import { type CagedShape } from "@/lib/music/caged";
 
 interface TriadState {
   selectedKey: Note;
@@ -8,11 +9,13 @@ interface TriadState {
   selectedDegree: number | null;
   labelMode: "note" | "degree";
   showScale: boolean;
+  selectedCagedShape: CagedShape | null;
   setKey: (key: Note) => void;
   setScale: (scale: ScaleDefinition) => void;
   setDegree: (degree: number | null) => void;
   setLabelMode: (mode: "note" | "degree") => void;
   setShowScale: (show: boolean) => void;
+  setCagedShape: (shape: CagedShape | null) => void;
 }
 
 export const useTriadStore = create<TriadState>((set) => ({
@@ -21,6 +24,7 @@ export const useTriadStore = create<TriadState>((set) => ({
   selectedDegree: 1,
   labelMode: "note",
   showScale: true,
+  selectedCagedShape: null,
   setKey: (key) => set({ selectedKey: key, selectedDegree: 1 }),
   setScale: (scale) =>
     set({
@@ -32,4 +36,6 @@ export const useTriadStore = create<TriadState>((set) => ({
     set((s) => ({ selectedDegree: s.selectedDegree === degree ? null : degree })),
   setLabelMode: (mode) => set({ labelMode: mode }),
   setShowScale: (show) => set({ showScale: show }),
+  setCagedShape: (shape) =>
+    set((s) => ({ selectedCagedShape: s.selectedCagedShape === shape ? null : shape })),
 }));

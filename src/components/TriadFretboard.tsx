@@ -5,6 +5,7 @@ import { OPEN_STRINGS, getNoteAtPosition, type Note } from "@/lib/music/notes";
 import { useTriadStore } from "@/store/triadStore";
 import { getDiatonicTriads } from "@/lib/music/triads";
 import { getScaleDegree, type ScaleDefinition } from "@/lib/music/scales";
+import { getCagedBox } from "@/lib/music/caged";
 
 const FRET_COUNT = 15;
 const FRET_MARKERS = [3, 5, 7, 9, 12, 15];
@@ -196,7 +197,10 @@ function InlayDot() {
 }
 
 export default function TriadFretboard() {
-  const { selectedKey, selectedScale, selectedDegree, labelMode, showScale } = useTriadStore();
+  const { selectedKey, selectedScale, selectedDegree, labelMode, showScale, selectedCagedShape } =
+    useTriadStore();
+
+  const cagedBox = selectedCagedShape ? getCagedBox(selectedKey, selectedCagedShape, selectedScale) : null;
 
   const triadNotes = useMemo<TriadNotes>(() => {
     if (selectedDegree === null) return null;
@@ -215,6 +219,9 @@ export default function TriadFretboard() {
           </div>
         ))}
       </div>
+
+      {/* Wrapper — CAGED box overlay lives here as a sibling, outside the polygon clip */}
+      <div className="relative">
 
       <div
         className="relative rounded-r-lg overflow-hidden border border-stone-800/80"
@@ -305,6 +312,26 @@ export default function TriadFretboard() {
           ))}
         </div>
       </div>
+
+      {/* CAGED box highlight — no clipPath so the rectangle border is never clipped */}
+      {cagedBox && (
+        <div className="absolute inset-0 pointer-events-none z-[35]">
+          <div
+            className="absolute top-0 bottom-0 rounded-sm"
+            style={{
+              left:  cagedBox.start === 0 ? '0px' : `calc(40px + ${cagedBox.start - 1} / ${FRET_COUNT} * (100% - 40px))`,
+              width: cagedBox.start === 0
+                ? `calc(40px + ${cagedBox.end} / ${FRET_COUNT} * (100% - 40px))`
+                : `calc(${cagedBox.end - cagedBox.start + 1} / ${FRET_COUNT} * (100% - 40px))`,
+              border:     "2px solid rgba(56,189,248,0.8)",
+              background: "rgba(56,189,248,0.06)",
+              boxShadow:  "0 0 16px rgba(56,189,248,0.25)",
+              transition: "left 0.3s ease-out, width 0.3s ease-out",
+            }}
+          />
+        </div>
+      )}
+      </div>{/* end wrapper */}
 
       <div className="flex mt-1 pl-10">
         {Array.from({ length: FRET_COUNT }, (_, i) => {

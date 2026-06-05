@@ -5,6 +5,7 @@ import { NOTES } from "@/lib/music/notes";
 import { useTriadStore } from "@/store/triadStore";
 import { getDiatonicTriads } from "@/lib/music/triads";
 import { SCALES, isHeptatonic } from "@/lib/music/scales";
+import { CAGED_SHAPES, getCagedBox } from "@/lib/music/caged";
 import TriadFretboard from "./TriadFretboard";
 
 const QUALITY_ABBREV = {
@@ -17,8 +18,8 @@ const QUALITY_ABBREV = {
 export default function TriadMap() {
   const {
     selectedKey, selectedScale, selectedDegree,
-    labelMode, showScale,
-    setKey, setScale, setDegree, setLabelMode, setShowScale,
+    labelMode, showScale, selectedCagedShape,
+    setKey, setScale, setDegree, setLabelMode, setShowScale, setCagedShape,
   } = useTriadStore();
 
   const heptatonic = isHeptatonic(selectedScale);
@@ -104,6 +105,32 @@ export default function TriadMap() {
             </div>
           </div>
         )}
+
+        {/* CAGED box selector */}
+        <div className="flex flex-col gap-2">
+          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">CAGED Box</span>
+          <div className="flex flex-wrap gap-1.5">
+            {CAGED_SHAPES.map((shape) => {
+              const box = getCagedBox(selectedKey, shape, selectedScale);
+              return (
+                <button
+                  key={shape}
+                  onClick={() => setCagedShape(shape)}
+                  className={`flex flex-col items-center px-3 py-2 rounded font-mono transition-all duration-150 min-w-[52px] ${
+                    selectedCagedShape === shape
+                      ? "bg-sky-400 text-stone-900 font-bold"
+                      : "bg-stone-800 text-stone-300 hover:bg-stone-700 hover:text-stone-100"
+                  }`}
+                >
+                  <span className="text-sm">{shape}</span>
+                  <span className={`text-[9px] mt-0.5 ${selectedCagedShape === shape ? "opacity-70" : "opacity-50"}`}>
+                    {box.start}–{box.end}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {/* View + Label toggles */}
         <div className="flex items-center gap-6 flex-wrap">
