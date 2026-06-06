@@ -54,6 +54,7 @@ function NoteDot({ role, label }: { role: Role; label: string }) {
   const colors = ROLE_COLORS[role];
   return (
     <div
+      data-testid="note-dot"
       className="w-6 h-6 rounded-full flex items-center justify-center"
       style={{ background: colors.bg, boxShadow: colors.glow }}
     >
@@ -67,6 +68,7 @@ function NoteDot({ role, label }: { role: Role; label: string }) {
 function ScaleDot({ label }: { label: string }) {
   return (
     <div
+      data-testid="scale-dot"
       className="w-5 h-5 rounded-full flex items-center justify-center"
       style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)" }}
     >
@@ -104,7 +106,7 @@ function FretCell({
         </div>
       ) : scaleDeg !== null ? (
         <div className="absolute z-30">
-          <ScaleDot label={labelMode === "degree" ? String(scaleDeg) : note} />
+          <ScaleDot label={labelMode === "degree" ? scaleDeg! : note} />
         </div>
       ) : null}
     </div>
@@ -150,7 +152,7 @@ function StringRow({
             label={labelMode === "degree" ? ROLE_DEGREE_LABEL[openRole] : openNote}
           />
         ) : openScaleDeg !== null ? (
-          <ScaleDot label={labelMode === "degree" ? String(openScaleDeg) : openNote} />
+          <ScaleDot label={labelMode === "degree" ? openScaleDeg! : openNote} />
         ) : (
           <span className="text-xs text-amber-200/60 font-mono">{STRING_LABELS[stringIndex]}</span>
         )}

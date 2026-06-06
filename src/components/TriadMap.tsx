@@ -38,7 +38,7 @@ export default function TriadMap() {
       <div className="flex flex-col gap-5 p-5 rounded-xl border border-stone-700/50 bg-stone-900/60">
 
         {/* Scale selector */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2" data-testid="section-scale">
           <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Scale</span>
           <div className="flex flex-wrap gap-1.5">
             {SCALES.map((scale) => (
@@ -58,7 +58,7 @@ export default function TriadMap() {
         </div>
 
         {/* Key selector */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2" data-testid="section-key">
           <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Key</span>
           <div className="flex flex-wrap gap-1.5">
             {NOTES.map((note) => (
@@ -79,12 +79,13 @@ export default function TriadMap() {
 
         {/* Chord degree selector — only for heptatonic scales */}
         {heptatonic && (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2" data-testid="section-chord">
             <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Chord</span>
             <div className="flex flex-wrap gap-1.5">
               {triads.map((triad) => (
                 <button
                   key={triad.degree}
+                  data-degree={triad.degree}
                   onClick={() => setDegree(triad.degree)}
                   className={`flex flex-col items-center px-3 py-2 rounded text-sm font-mono transition-all duration-150 min-w-[56px] ${
                     selectedDegree === triad.degree
@@ -107,7 +108,7 @@ export default function TriadMap() {
         )}
 
         {/* CAGED box selector */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2" data-testid="section-caged">
           <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">CAGED Box</span>
           <div className="flex flex-wrap gap-1.5">
             {CAGED_SHAPES.map((shape) => {
@@ -134,7 +135,7 @@ export default function TriadMap() {
 
         {/* View + Label toggles */}
         <div className="flex items-center gap-6 flex-wrap">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3" data-testid="section-view">
             <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">View</span>
             <div className="flex rounded overflow-hidden border border-stone-700/60">
               {([false, true] as const).map((scale) => (
@@ -153,7 +154,7 @@ export default function TriadMap() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3" data-testid="section-labels">
             <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Labels</span>
             <div className="flex rounded overflow-hidden border border-stone-700/60">
               {(["note", "degree"] as const).map((mode) => (
@@ -174,7 +175,7 @@ export default function TriadMap() {
         </div>
 
         {/* Info bar + legend */}
-        <div className="flex items-center justify-between flex-wrap gap-3 pt-3 border-t border-stone-700/40">
+        <div className="flex items-center justify-between flex-wrap gap-3 pt-3 border-t border-stone-700/40" data-testid="info-bar">
           <div className="text-sm font-mono">
             {activeTriad ? (
               <span>

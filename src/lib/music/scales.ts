@@ -30,13 +30,20 @@ export function getScaleNotes(root: Note, scale: ScaleDefinition): Note[] {
   return scale.semitones.map((s) => NOTES[((rootIdx + s) % 12 + 12) % 12]);
 }
 
+const SEMITONE_DEGREE_LABEL: Record<number, string> = {
+  0: "1", 1: "b2", 2: "2", 3: "b3", 4: "3",
+  5: "4", 6: "b5", 7: "5", 8: "b6", 9: "6",
+  10: "b7", 11: "7",
+};
+
 export function getScaleDegree(
   note: Note,
   root: Note,
   scale: ScaleDefinition
-): number | null {
+): string | null {
   const rootIdx = NOTES.indexOf(root);
   const offset = ((NOTES.indexOf(note) - rootIdx) % 12 + 12) % 12;
-  const idx = (scale.semitones as readonly number[]).indexOf(offset);
-  return idx === -1 ? null : idx + 1;
+  return (scale.semitones as readonly number[]).includes(offset)
+    ? SEMITONE_DEGREE_LABEL[offset]
+    : null;
 }
