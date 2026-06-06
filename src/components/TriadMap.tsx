@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { NOTES } from "@/lib/music/notes";
 import { useTriadStore } from "@/store/triadStore";
 import { getDiatonicTriads } from "@/lib/music/triads";
@@ -30,6 +30,24 @@ export default function TriadMap() {
   const activeTriad = selectedDegree !== null
     ? triads.find((t) => t.degree === selectedDegree)
     : null;
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      if (selectedCagedShape === null) {
+        setCagedShape(e.key === "ArrowRight" ? CAGED_SHAPES[0] : CAGED_SHAPES[CAGED_SHAPES.length - 1]);
+        return;
+      }
+      const idx = CAGED_SHAPES.indexOf(selectedCagedShape);
+      const next = e.key === "ArrowRight"
+        ? CAGED_SHAPES[(idx + 1) % CAGED_SHAPES.length]
+        : CAGED_SHAPES[(idx - 1 + CAGED_SHAPES.length) % CAGED_SHAPES.length];
+      setCagedShape(next);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedCagedShape, setCagedShape]);
 
   return (
     <div className="w-full max-w-5xl flex flex-col gap-6">
@@ -135,24 +153,26 @@ export default function TriadMap() {
 
         {/* View + Label toggles */}
         <div className="flex items-center gap-6 flex-wrap">
-          <div className="flex items-center gap-3" data-testid="section-view">
-            <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">View</span>
-            <div className="flex rounded overflow-hidden border border-stone-700/60">
-              {([false, true] as const).map((scale) => (
-                <button
-                  key={String(scale)}
-                  onClick={() => setShowScale(scale)}
-                  className={`px-3 py-1 text-xs font-mono transition-all duration-150 ${
-                    showScale === scale
-                      ? "bg-amber-400 text-stone-900 font-bold"
-                      : "bg-stone-800 text-stone-400 hover:text-stone-200"
-                  }`}
-                >
-                  {scale ? "Scale" : "Triad"}
-                </button>
-              ))}
+          {heptatonic && (
+            <div className="flex items-center gap-3" data-testid="section-view">
+              <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">View</span>
+              <div className="flex rounded overflow-hidden border border-stone-700/60">
+                {([false, true] as const).map((scale) => (
+                  <button
+                    key={String(scale)}
+                    onClick={() => setShowScale(scale)}
+                    className={`px-3 py-1 text-xs font-mono transition-all duration-150 ${
+                      showScale === scale
+                        ? "bg-amber-400 text-stone-900 font-bold"
+                        : "bg-stone-800 text-stone-400 hover:text-stone-200"
+                    }`}
+                  >
+                    {scale ? "Scale" : "Triad"}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex items-center gap-3" data-testid="section-labels">
             <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Labels</span>

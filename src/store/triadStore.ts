@@ -24,7 +24,7 @@ export const useTriadStore = create<TriadState>((set) => ({
   selectedDegree: 1,
   labelMode: "note",
   showScale: true,
-  selectedCagedShape: null,
+  selectedCagedShape: "C",
   setKey: (key) => set({ selectedKey: key, selectedDegree: 1 }),
   setScale: (scale) =>
     set({

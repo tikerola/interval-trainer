@@ -22,7 +22,7 @@ test.describe("Triad Map", () => {
   // ── 1. Default state ──────────────────────────────────────────────────────
 
   test.describe("default state", () => {
-    test("loads with Major scale, C key and chord I active", async ({ page }) => {
+    test("loads with Major scale, C key, chord I and CAGED C active", async ({ page }) => {
       await expect(section(page, "scale").getByRole("button", { name: "Major" })).toHaveClass(
         /bg-amber-400/
       );
@@ -32,6 +32,10 @@ test.describe("Triad Map", () => {
       await expect(section(page, "chord")).toBeVisible();
       await expect(section(page, "chord").locator("[data-degree='1']")).toHaveClass(
         /bg-amber-400/
+      );
+      // C CAGED shape is highlighted by default
+      await expect(section(page, "caged").getByRole("button", { name: /^C/ })).toHaveClass(
+        /bg-sky-400/
       );
     });
 
@@ -54,15 +58,18 @@ test.describe("Triad Map", () => {
       );
     });
 
-    test("Minor Pentatonic hides the Chord selector", async ({ page }) => {
+    test("Minor Pentatonic hides the Chord selector and View toggle", async ({ page }) => {
       await expect(section(page, "chord")).toBeVisible();
+      await expect(page.getByTestId("section-view")).toBeVisible();
       await section(page, "scale").getByRole("button", { name: "Min Pent" }).click();
       await expect(page.getByTestId("section-chord")).not.toBeVisible();
+      await expect(page.getByTestId("section-view")).not.toBeVisible();
     });
 
-    test("Blues Minor hides the Chord selector", async ({ page }) => {
+    test("Blues Minor hides the Chord selector and View toggle", async ({ page }) => {
       await section(page, "scale").getByRole("button", { name: "Blues Min" }).click();
       await expect(page.getByTestId("section-chord")).not.toBeVisible();
+      await expect(page.getByTestId("section-view")).not.toBeVisible();
     });
 
     test("switching from pentatonic back to a heptatonic scale restores Chord selector", async ({
@@ -133,6 +140,46 @@ test.describe("Triad Map", () => {
       await expect(eBtn).toHaveClass(/bg-sky-400/);
       await eBtn.click();
       await expect(eBtn).not.toHaveClass(/bg-sky-400/);
+    });
+  });
+
+  // ── 5b. CAGED keyboard navigation ────────────────────────────────────────
+
+  test.describe("CAGED keyboard navigation", () => {
+    test("ArrowRight cycles forward through shapes (C → A → G)", async ({ page }) => {
+      // Default is C
+      await expect(section(page, "caged").getByRole("button", { name: /^C/ })).toHaveClass(/bg-sky-400/);
+
+      await page.keyboard.press("ArrowRight");
+      await expect(section(page, "caged").getByRole("button", { name: /^A/ })).toHaveClass(/bg-sky-400/);
+
+      await page.keyboard.press("ArrowRight");
+      await expect(section(page, "caged").getByRole("button", { name: /^G/ })).toHaveClass(/bg-sky-400/);
+    });
+
+    test("ArrowLeft wraps from C back to D (last shape)", async ({ page }) => {
+      // Default is C (idx 0) — going left should wrap to D (idx 4)
+      await page.keyboard.press("ArrowLeft");
+      await expect(section(page, "caged").getByRole("button", { name: /^D/ })).toHaveClass(/bg-sky-400/);
+    });
+
+    test("ArrowRight wraps from D back to C", async ({ page }) => {
+      // Navigate to D first
+      await page.keyboard.press("ArrowLeft");
+      await expect(section(page, "caged").getByRole("button", { name: /^D/ })).toHaveClass(/bg-sky-400/);
+
+      await page.keyboard.press("ArrowRight");
+      await expect(section(page, "caged").getByRole("button", { name: /^C/ })).toHaveClass(/bg-sky-400/);
+    });
+
+    test("arrow keys resume from first/last shape after CAGED is deselected", async ({ page }) => {
+      // Deselect C by clicking it
+      await section(page, "caged").getByRole("button", { name: /^C/ }).click();
+      await expect(section(page, "caged").getByRole("button", { name: /^C/ })).not.toHaveClass(/bg-sky-400/);
+
+      // ArrowRight from null → selects C (first shape)
+      await page.keyboard.press("ArrowRight");
+      await expect(section(page, "caged").getByRole("button", { name: /^C/ })).toHaveClass(/bg-sky-400/);
     });
   });
 
