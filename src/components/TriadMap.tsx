@@ -148,6 +148,16 @@ export default function TriadMap() {
                 </button>
               );
             })}
+            {selectedCagedShape !== null && (
+              <button
+                onClick={() => setCagedShape(null)}
+                className="flex flex-col items-center justify-center px-3 py-2 rounded font-mono transition-all duration-150 min-w-[52px] bg-stone-800 text-stone-400 hover:bg-stone-700 hover:text-stone-200"
+                title="Clear CAGED highlight"
+              >
+                <span className="text-sm">✕</span>
+                <span className="text-[9px] mt-0.5 opacity-50">none</span>
+              </button>
+            )}
           </div>
         </div>
 
