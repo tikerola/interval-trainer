@@ -40,10 +40,13 @@ export default function TriadMap() {
         return;
       }
       const idx = CAGED_SHAPES.indexOf(selectedCagedShape);
-      const next = e.key === "ArrowRight"
-        ? CAGED_SHAPES[(idx + 1) % CAGED_SHAPES.length]
-        : CAGED_SHAPES[(idx - 1 + CAGED_SHAPES.length) % CAGED_SHAPES.length];
-      setCagedShape(next);
+      if (e.key === "ArrowRight" && idx === CAGED_SHAPES.length - 1) {
+        setCagedShape(null);
+      } else if (e.key === "ArrowLeft" && idx === 0) {
+        setCagedShape(null);
+      } else {
+        setCagedShape(e.key === "ArrowRight" ? CAGED_SHAPES[idx + 1] : CAGED_SHAPES[idx - 1]);
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);

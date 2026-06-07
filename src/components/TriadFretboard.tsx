@@ -85,6 +85,7 @@ function FretCell({
   showScale,
   selectedKey,
   selectedScale,
+  dimmed,
 }: {
   stringIndex: number;
   fretNumber: number;
@@ -93,6 +94,7 @@ function FretCell({
   showScale: boolean;
   selectedKey: Note;
   selectedScale: ScaleDefinition;
+  dimmed: boolean;
 }) {
   const { note } = getNoteAtPosition(stringIndex, fretNumber);
   const role = getRole(note, triadNotes);
@@ -101,11 +103,11 @@ function FretCell({
   return (
     <div className="flex-1 flex items-center justify-center relative" style={{ minHeight: "30px" }}>
       {role ? (
-        <div className="absolute z-30">
+        <div className={`absolute z-30 transition-opacity duration-300 ${dimmed ? "opacity-20" : "opacity-100"}`}>
           <NoteDot role={role} label={labelMode === "degree" ? ROLE_DEGREE_LABEL[role] : note} />
         </div>
       ) : scaleDeg !== null ? (
-        <div className="absolute z-30">
+        <div className={`absolute z-30 transition-opacity duration-300 ${dimmed ? "opacity-20" : "opacity-100"}`}>
           <ScaleDot label={labelMode === "degree" ? scaleDeg! : note} />
         </div>
       ) : null}
@@ -123,6 +125,7 @@ function StringRow({
   showScale,
   selectedKey,
   selectedScale,
+  cagedBox,
 }: {
   stringIndex: number;
   fretCount: number;
@@ -133,19 +136,21 @@ function StringRow({
   showScale: boolean;
   selectedKey: Note;
   selectedScale: ScaleDefinition;
+  cagedBox: { start: number; end: number } | null;
 }) {
   const h = STRING_HEIGHTS[stringIndex];
   const openNote = getNoteAtPosition(stringIndex, 0).note;
   const openRole = getRole(openNote, triadNotes);
   const openScaleDeg =
     !openRole && showScale ? getScaleDegree(openNote, selectedKey, selectedScale) : null;
+  const openDimmed = cagedBox !== null && cagedBox.start > 0;
 
   return (
     <div
       className="relative flex items-center"
       style={{ paddingTop: isFirst ? "8px" : "2px", paddingBottom: isLast ? "8px" : "2px" }}
     >
-      <div className="w-10 shrink-0 flex items-center justify-center z-30">
+      <div className={`w-10 shrink-0 flex items-center justify-center z-30 transition-opacity duration-300 ${openDimmed ? "opacity-20" : "opacity-100"}`}>
         {openRole ? (
           <NoteDot
             role={openRole}
@@ -167,18 +172,23 @@ function StringRow({
         }}
       />
       <div className="flex flex-1">
-        {Array.from({ length: fretCount }, (_, i) => (
-          <FretCell
-            key={i}
-            stringIndex={stringIndex}
-            fretNumber={i + 1}
-            triadNotes={triadNotes}
-            labelMode={labelMode}
-            showScale={showScale}
-            selectedKey={selectedKey}
-            selectedScale={selectedScale}
-          />
-        ))}
+        {Array.from({ length: fretCount }, (_, i) => {
+          const fret = i + 1;
+          const dimmed = cagedBox !== null && (fret < cagedBox.start || fret > cagedBox.end);
+          return (
+            <FretCell
+              key={i}
+              stringIndex={stringIndex}
+              fretNumber={fret}
+              triadNotes={triadNotes}
+              labelMode={labelMode}
+              showScale={showScale}
+              selectedKey={selectedKey}
+              selectedScale={selectedScale}
+              dimmed={dimmed}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -283,6 +293,7 @@ export default function TriadFretboard() {
               showScale={showScale}
               selectedKey={selectedKey}
               selectedScale={selectedScale}
+              cagedBox={cagedBox}
             />
           ))}
         </div>
@@ -314,6 +325,34 @@ export default function TriadFretboard() {
           ))}
         </div>
       </div>
+
+      {/* Curtain overlays — darken area outside CAGED box */}
+      {cagedBox && (
+        <div className="absolute inset-0 pointer-events-none z-[33]">
+          {cagedBox.start > 0 && (
+            <div
+              className="absolute top-0 bottom-0"
+              style={{
+                left: 0,
+                width: `calc(40px + ${cagedBox.start - 1} / ${FRET_COUNT} * (100% - 40px))`,
+                background: "rgba(0,0,0,0.55)",
+                transition: "width 0.3s ease-out",
+              }}
+            />
+          )}
+          {cagedBox.end < FRET_COUNT && (
+            <div
+              className="absolute top-0 bottom-0"
+              style={{
+                left: `calc(40px + ${cagedBox.end} / ${FRET_COUNT} * (100% - 40px))`,
+                right: 0,
+                background: "rgba(0,0,0,0.55)",
+                transition: "left 0.3s ease-out",
+              }}
+            />
+          )}
+        </div>
+      )}
 
       {/* CAGED box highlight — no clipPath so the rectangle border is never clipped */}
       {cagedBox && (

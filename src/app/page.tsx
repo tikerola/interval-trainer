@@ -5,13 +5,15 @@ import Fretboard from "@/components/Fretboard";
 import ExerciseHub from "@/components/ExerciseHub";
 import ExerciseResults from "@/components/ExerciseResults";
 import TriadMap from "@/components/TriadMap";
+import BluesTrainer from "@/components/BluesTrainer";
 import { useExerciseStore } from "@/store/exerciseStore";
 
-type Tab = "interval" | "triad";
+type Tab = "interval" | "triad" | "blues";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "interval", label: "Interval Trainer" },
   { id: "triad",    label: "Triad Map" },
+  { id: "blues",    label: "Blues Trainer" },
 ];
 
 export default function Home() {
@@ -50,8 +52,10 @@ export default function Home() {
           <ExerciseHub />
           {stopped && <ExerciseResults />}
         </>
-      ) : (
+      ) : activeTab === "triad" ? (
         <TriadMap />
+      ) : (
+        <BluesTrainer />
       )}
     </main>
   );
