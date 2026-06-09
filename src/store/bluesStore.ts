@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Note } from "@/lib/music/notes";
+import type { SoloRhythm } from "@/lib/music/soloGenerator";
 
 interface BluesState {
   key: Note;
@@ -10,6 +11,9 @@ interface BluesState {
   stringStart: number; // 0 = low E, 5 = high e
   stringEnd: number;
   chordTonesOnly: boolean;
+  soloEnabled: boolean;
+  soloRhythm: SoloRhythm;
+  activeSoloNote: { stringIndex: number; fretNumber: number } | null;
 
   isPlaying: boolean;
   isCountIn: boolean;
@@ -24,6 +28,9 @@ interface BluesState {
   setFretRange: (start: number, end: number) => void;
   setStringRange: (start: number, end: number) => void;
   setChordTonesOnly: (v: boolean) => void;
+  setSoloEnabled: (v: boolean) => void;
+  setSoloRhythm: (r: SoloRhythm) => void;
+  setActiveSoloNote: (note: { stringIndex: number; fretNumber: number } | null) => void;
   setIsPlaying: (v: boolean) => void;
   setIsCountIn: (v: boolean) => void;
   setCountInBeat: (beat: number) => void;
@@ -42,6 +49,9 @@ export const useBluesStore = create<BluesState>((set) => ({
   stringStart: 0,
   stringEnd: 5,
   chordTonesOnly: true,
+  soloEnabled: false,
+  soloRhythm: "shuffle" as SoloRhythm,
+  activeSoloNote: null,
 
   isPlaying: false,
   isCountIn: false,
@@ -56,11 +66,14 @@ export const useBluesStore = create<BluesState>((set) => ({
   setFretRange: (start, end) => set({ fretStart: start, fretEnd: end }),
   setStringRange: (start, end) => set({ stringStart: start, stringEnd: end }),
   setChordTonesOnly: (v) => set({ chordTonesOnly: v }),
+  setSoloEnabled: (v) => set({ soloEnabled: v }),
+  setSoloRhythm: (r) => set({ soloRhythm: r }),
+  setActiveSoloNote: (note) => set({ activeSoloNote: note }),
   setIsPlaying: (v) => set({ isPlaying: v }),
   setIsCountIn: (v) => set({ isCountIn: v }),
   setCountInBeat: (beat) => set({ countInBeat: beat }),
   setCurrentBar: (bar) => set({ currentBar: bar }),
   setCurrentBeat: (beat) => set({ currentBeat: beat }),
   setElapsedSeconds: (s) => set({ elapsedSeconds: s }),
-  stop: () => set({ isPlaying: false, isCountIn: false, countInBeat: 0, currentBar: 1, currentBeat: 1, elapsedSeconds: 0 }),
+  stop: () => set({ isPlaying: false, isCountIn: false, countInBeat: 0, currentBar: 1, currentBeat: 1, elapsedSeconds: 0, activeSoloNote: null }),
 }));

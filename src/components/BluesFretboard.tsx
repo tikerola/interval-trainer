@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useCallback } from "react";
 import { OPEN_STRINGS, NOTES, getNoteAtPosition, type Note } from "@/lib/music/notes";
 import { getBluesNoteRole, type BluesRole } from "@/lib/music/blues";
 
@@ -10,6 +11,7 @@ const DISPLAY_ORDER = [...Array(OPEN_STRINGS.length)].map((_, i) => OPEN_STRINGS
 const STRING_HEIGHTS = [3.5, 3, 2.5, 2, 1.5, 1];
 const STRING_LABELS = ["E", "A", "D", "G", "B", "e"];
 const WOUND = new Set([0, 1, 2, 3]);
+const MIN_SPAN = 2;
 
 const ROLE_STYLES: Record<BluesRole, { bg: string; ring?: string; text: string; size: string }> = {
   root:    { bg: "#c87d10",                                        text: "#1c0901", size: "w-6 h-6" },
@@ -81,6 +83,15 @@ function InlayDot() {
 
 const CHORD_TONE_ROLES = new Set(["root", "third", "fifth", "seventh"]);
 
+function ActiveNotePing() {
+  return (
+    <div className="relative w-6 h-6 flex items-center justify-center">
+      <div className="absolute w-6 h-6 rounded-full bg-white/30 animate-ping" />
+      <div className="w-5 h-5 rounded-full bg-white border-2 border-amber-300 shadow-[0_0_8px_rgba(255,255,255,0.9)]" />
+    </div>
+  );
+}
+
 function FretCell({
   stringIndex,
   fretNumber,
@@ -88,6 +99,7 @@ function FretCell({
   keyNote,
   inRange,
   chordTonesOnly,
+  activeSoloNote,
 }: {
   stringIndex: number;
   fretNumber: number;
@@ -95,15 +107,22 @@ function FretCell({
   keyNote: Note;
   inRange: boolean;
   chordTonesOnly: boolean;
+  activeSoloNote: { stringIndex: number; fretNumber: number } | null;
 }) {
   const { note } = getNoteAtPosition(stringIndex, fretNumber);
   const rawRole = inRange && chordNotes ? getBluesNoteRole(note, chordNotes, keyNote) : null;
   const role = rawRole && chordTonesOnly && !CHORD_TONE_ROLES.has(rawRole) ? null : rawRole;
   const pentLabel = (role === "majpent" || role === "minpent") ? getKeyDegree(note, keyNote) : undefined;
+  const isActive = activeSoloNote?.stringIndex === stringIndex && activeSoloNote?.fretNumber === fretNumber;
 
   return (
     <div className="flex-1 flex items-center justify-center relative" style={{ minHeight: "30px" }}>
-      {role && (
+      {isActive && (
+        <div className="absolute z-40">
+          <ActiveNotePing />
+        </div>
+      )}
+      {role && !isActive && (
         <div className="absolute z-30">
           <NoteDot role={role} label={pentLabel} />
         </div>
@@ -122,6 +141,7 @@ function StringRow({
   fretEnd,
   inStringRange,
   chordTonesOnly,
+  activeSoloNote,
 }: {
   stringIndex: number;
   isFirst: boolean;
@@ -132,6 +152,7 @@ function StringRow({
   fretEnd: number;
   inStringRange: boolean;
   chordTonesOnly: boolean;
+  activeSoloNote: { stringIndex: number; fretNumber: number } | null;
 }) {
   const h = STRING_HEIGHTS[stringIndex];
   const openNote = getNoteAtPosition(stringIndex, 0).note;
@@ -144,8 +165,10 @@ function StringRow({
       className="relative flex items-center"
       style={{ paddingTop: isFirst ? "8px" : "2px", paddingBottom: isLast ? "8px" : "2px" }}
     >
-      <div className="w-10 shrink-0 flex items-center justify-center z-30">
-        {openRole ? (
+      <div className="w-10 shrink-0 flex items-center justify-center z-40">
+        {activeSoloNote?.stringIndex === stringIndex && activeSoloNote?.fretNumber === 0 ? (
+          <ActiveNotePing />
+        ) : openRole ? (
           <NoteDot
             role={openRole}
             label={(openRole === "majpent" || openRole === "minpent") ? getKeyDegree(openNote, keyNote) : undefined}
@@ -177,6 +200,7 @@ function StringRow({
               keyNote={keyNote}
               inRange={inRange}
               chordTonesOnly={chordTonesOnly}
+              activeSoloNote={activeSoloNote}
             />
           );
         })}
@@ -193,6 +217,8 @@ export default function BluesFretboard({
   stringStart,
   stringEnd,
   chordTonesOnly,
+  activeSoloNote,
+  onFretRangeChange,
 }: {
   keyNote: Note;
   chordNotes: [Note, Note, Note, Note] | null;
@@ -201,7 +227,49 @@ export default function BluesFretboard({
   stringStart: number;
   stringEnd: number;
   chordTonesOnly: boolean;
+  activeSoloNote: { stringIndex: number; fretNumber: number } | null;
+  onFretRangeChange?: (start: number, end: number) => void;
 }) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    type: "move" | "left" | "right";
+    startX: number;
+    startFretStart: number;
+    startFretEnd: number;
+  } | null>(null);
+
+  const startDrag = useCallback(
+    (e: React.PointerEvent, type: "move" | "left" | "right") => {
+      e.preventDefault();
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      dragRef.current = { type, startX: e.clientX, startFretStart: fretStart, startFretEnd: fretEnd };
+    },
+    [fretStart, fretEnd]
+  );
+
+  const onDragMove = useCallback(
+    (e: React.PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || !onFretRangeChange || !wrapperRef.current) return;
+      const fretWidth = (wrapperRef.current.getBoundingClientRect().width - 40) / FRET_COUNT;
+      const delta = Math.round((e.clientX - drag.startX) / fretWidth);
+      if (drag.type === "move") {
+        const span = drag.startFretEnd - drag.startFretStart;
+        const newStart = Math.max(0, Math.min(FRET_COUNT - span, drag.startFretStart + delta));
+        onFretRangeChange(newStart, newStart + span);
+      } else if (drag.type === "left") {
+        const newStart = Math.max(0, Math.min(drag.startFretEnd - MIN_SPAN, drag.startFretStart + delta));
+        onFretRangeChange(newStart, drag.startFretEnd);
+      } else {
+        const newEnd = Math.min(FRET_COUNT, Math.max(drag.startFretStart + MIN_SPAN, drag.startFretEnd + delta));
+        onFretRangeChange(drag.startFretStart, newEnd);
+      }
+    },
+    [onFretRangeChange]
+  );
+
+  const onDragEnd = useCallback(() => { dragRef.current = null; }, []);
+
   return (
     <div className="w-full max-w-5xl">
       <div className="flex mb-1 pl-10">
@@ -213,7 +281,7 @@ export default function BluesFretboard({
       </div>
 
       {/* Wrapper so curtains sit outside the clipPath */}
-      <div className="relative">
+      <div ref={wrapperRef} className="relative">
 
       <div
         className="relative rounded-r-lg overflow-hidden border border-stone-800/80"
@@ -275,6 +343,7 @@ export default function BluesFretboard({
               fretEnd={fretEnd}
               inStringRange={stringIndex >= stringStart && stringIndex <= stringEnd}
               chordTonesOnly={chordTonesOnly}
+              activeSoloNote={activeSoloNote}
             />
           ))}
         </div>
@@ -315,7 +384,6 @@ export default function BluesFretboard({
               left: 0,
               width: `calc(40px + ${fretStart - 1} / ${FRET_COUNT} * (100% - 40px))`,
               background: "rgba(0,0,0,0.6)",
-              transition: "width 0.15s ease-out",
             }}
           />
         )}
@@ -326,11 +394,53 @@ export default function BluesFretboard({
               left: `calc(40px + ${fretEnd} / ${FRET_COUNT} * (100% - 40px))`,
               right: 0,
               background: "rgba(0,0,0,0.6)",
-              transition: "left 0.15s ease-out",
             }}
           />
         )}
       </div>
+
+      {/* Draggable range overlay */}
+      {onFretRangeChange && (
+        <div
+          className="absolute top-0 bottom-0 z-[34] pointer-events-none"
+          style={{
+            left: fretStart === 0
+              ? "0px"
+              : `calc(40px + ${fretStart - 1} / ${FRET_COUNT} * (100% - 40px))`,
+            right: fretEnd === FRET_COUNT
+              ? "0px"
+              : `calc(${FRET_COUNT - fretEnd} / ${FRET_COUNT} * (100% - 40px))`,
+          }}
+        >
+          {/* Left resize handle */}
+          <div
+            className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize pointer-events-auto group"
+            onPointerDown={(e) => startDrag(e, "left")}
+            onPointerMove={onDragMove}
+            onPointerUp={onDragEnd}
+          >
+            <div className="absolute inset-y-0 left-[5px] w-px bg-amber-400/25 group-hover:bg-amber-400/55 transition-colors" />
+          </div>
+
+          {/* Center move handle */}
+          <div
+            className="absolute inset-y-0 left-3 right-3 cursor-grab active:cursor-grabbing pointer-events-auto"
+            onPointerDown={(e) => startDrag(e, "move")}
+            onPointerMove={onDragMove}
+            onPointerUp={onDragEnd}
+          />
+
+          {/* Right resize handle */}
+          <div
+            className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize pointer-events-auto group"
+            onPointerDown={(e) => startDrag(e, "right")}
+            onPointerMove={onDragMove}
+            onPointerUp={onDragEnd}
+          >
+            <div className="absolute inset-y-0 right-[5px] w-px bg-amber-400/25 group-hover:bg-amber-400/55 transition-colors" />
+          </div>
+        </div>
+      )}
 
       </div>{/* end wrapper */}
 

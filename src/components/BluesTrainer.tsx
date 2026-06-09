@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useRef, useEffect, useCallback } from "react";
+import { useMemo } from "react";
 import { NOTES } from "@/lib/music/notes";
 import { useBluesStore } from "@/store/bluesStore";
 import { useBluesEngine } from "@/hooks/useBluesEngine";
 import { getChordForBar, BLUES_PROGRESSION, DURATION_OPTIONS } from "@/lib/music/blues";
+import { SOLO_RHYTHM_LABELS, type SoloRhythm } from "@/lib/music/soloGenerator";
 import BluesFretboard from "./BluesFretboard";
 
 const ALL_STRINGS = [
@@ -20,86 +21,6 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-const FRET_MAX = 15;
-const FRET_TICK_LABELS = [0, 3, 5, 7, 9, 12, 15];
-
-function FretRangeSlider({
-  start, end, onChange,
-}: {
-  start: number;
-  end: number;
-  onChange: (start: number, end: number) => void;
-}) {
-  const MIN_SPAN = 2;
-  const trackRef = useRef<HTMLDivElement>(null);
-  const valuesRef = useRef({ start, end });
-  valuesRef.current = { start, end };
-
-  const fretFromX = useCallback((clientX: number) => {
-    const rect = trackRef.current!.getBoundingClientRect();
-    return Math.round(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * FRET_MAX);
-  }, []);
-
-  const leftPct  = (start / FRET_MAX) * 100;
-  const rightPct = (end   / FRET_MAX) * 100;
-
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Fret Range</span>
-        <span className="text-xs text-stone-300 font-mono tabular-nums">{start} – {end}</span>
-      </div>
-
-      <div ref={trackRef} className="relative h-12 flex items-center select-none touch-none">
-        {/* Track */}
-        <div className="absolute inset-x-0 h-1.5 bg-stone-700 rounded-full" style={{ top: "10px" }} />
-
-        {/* Active fill */}
-        <div
-          className="absolute h-1.5 bg-stone-500 rounded-full"
-          style={{ top: "10px", left: `${leftPct}%`, right: `${100 - rightPct}%` }}
-        />
-
-        {/* Tick labels */}
-        {FRET_TICK_LABELS.map((fret) => (
-          <div
-            key={fret}
-            className="absolute bottom-0 text-[9px] text-stone-600 font-mono pointer-events-none"
-            style={{ left: `${(fret / FRET_MAX) * 100}%`, transform: "translateX(-50%)" }}
-          >
-            {fret}
-          </div>
-        ))}
-
-        {/* Handles */}
-        {(["start", "end"] as const).map((handle) => {
-          const pct = handle === "start" ? leftPct : rightPct;
-          return (
-            <div
-              key={handle}
-              className="absolute w-4 h-4 rounded-full bg-stone-300 border-2 border-stone-500 cursor-grab active:cursor-grabbing z-10 shadow-md"
-              style={{ left: `${pct}%`, top: "2px", transform: "translateX(-50%)" }}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.currentTarget.setPointerCapture(e.pointerId);
-              }}
-              onPointerMove={(e) => {
-                if (e.buttons === 0) return;
-                const fret = fretFromX(e.clientX);
-                const { start: s, end: en } = valuesRef.current;
-                if (handle === "start") {
-                  onChange(Math.max(0, Math.min(fret, en - MIN_SPAN)), en);
-                } else {
-                  onChange(s, Math.min(FRET_MAX, Math.max(fret, s + MIN_SPAN)));
-                }
-              }}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 function BpmStepper() {
   const { bpm, setBpm, isPlaying } = useBluesStore();
@@ -124,9 +45,11 @@ export default function BluesTrainer() {
   useBluesEngine();
 
   const {
-    key, bpm, durationSeconds, fretStart, fretEnd, stringStart, stringEnd, chordTonesOnly,
+    key, bpm, durationSeconds, fretStart, fretEnd, stringStart, stringEnd,
+    chordTonesOnly, soloEnabled, soloRhythm, activeSoloNote,
     isPlaying, isCountIn, countInBeat, currentBar, currentBeat, elapsedSeconds,
-    setKey, setDuration, setFretRange, setStringRange, setChordTonesOnly, setIsPlaying, stop,
+    setKey, setDuration, setFretRange, setStringRange,
+    setChordTonesOnly, setSoloEnabled, setSoloRhythm, setIsPlaying, stop,
   } = useBluesStore();
 
   const currentChord = useMemo(() => getChordForBar(key, currentBar), [key, currentBar]);
@@ -253,6 +176,8 @@ export default function BluesTrainer() {
         stringStart={stringStart}
         stringEnd={stringEnd}
         chordTonesOnly={chordTonesOnly}
+        activeSoloNote={activeSoloNote}
+        onFretRangeChange={setFretRange}
       />
 
       {/* Controls */}
@@ -279,13 +204,10 @@ export default function BluesTrainer() {
           </div>
         </div>
 
-        {/* Fret range slider */}
-        <div className="w-72">
-          <FretRangeSlider
-            start={fretStart}
-            end={fretEnd}
-            onChange={setFretRange}
-          />
+        {/* Fret range readout */}
+        <div className="flex flex-col gap-2">
+          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Fret Range</span>
+          <span className="text-sm font-mono text-stone-300 tabular-nums">{fretStart} – {fretEnd}</span>
         </div>
 
         {/* String range */}
@@ -334,6 +256,46 @@ export default function BluesTrainer() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Solo controls */}
+      <div className="flex flex-wrap gap-x-8 gap-y-4 items-start pt-1 border-t border-stone-800">
+
+        {/* Enable toggle */}
+        <div className="flex flex-col gap-2">
+          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Solo</span>
+          <button
+            onClick={() => setSoloEnabled(!soloEnabled)}
+            className={`px-4 py-1.5 rounded font-mono text-xs font-bold transition-all duration-150 ${
+              soloEnabled
+                ? "bg-sky-500/80 text-white"
+                : "bg-stone-800 text-stone-400 hover:bg-stone-700"
+            }`}
+          >
+            {soloEnabled ? "On" : "Off"}
+          </button>
+        </div>
+
+        {/* Rhythm */}
+        <div className={`flex flex-col gap-2 transition-opacity ${soloEnabled ? "opacity-100" : "opacity-30 pointer-events-none"}`}>
+          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Feel</span>
+          <div className="flex gap-1.5">
+            {(Object.keys(SOLO_RHYTHM_LABELS) as SoloRhythm[]).map((r) => (
+              <button
+                key={r}
+                onClick={() => setSoloRhythm(r)}
+                className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
+                  soloRhythm === r
+                    ? "bg-sky-500/70 text-white font-bold"
+                    : "bg-stone-800 text-stone-400 hover:bg-stone-700"
+                }`}
+              >
+                {SOLO_RHYTHM_LABELS[r]}
+              </button>
+            ))}
+          </div>
+        </div>
+
       </div>
 
       {/* Start / Stop */}
