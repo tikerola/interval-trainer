@@ -1,6 +1,6 @@
 "use client";
 
-import { OPEN_STRINGS, getNoteAtPosition, type Note } from "@/lib/music/notes";
+import { OPEN_STRINGS, NOTES, getNoteAtPosition, type Note } from "@/lib/music/notes";
 import { getBluesNoteRole, type BluesRole } from "@/lib/music/blues";
 
 const FRET_COUNT = 15;
@@ -11,15 +11,15 @@ const STRING_HEIGHTS = [3.5, 3, 2.5, 2, 1.5, 1];
 const STRING_LABELS = ["E", "A", "D", "G", "B", "e"];
 const WOUND = new Set([0, 1, 2, 3]);
 
-const ROLE_STYLES: Record<BluesRole, { bg: string; glow: string; text: string; size: string }> = {
-  root:    { bg: "#fbbf24",               glow: "0 0 10px rgba(251,191,36,0.85)",  text: "#1c1009", size: "w-6 h-6" },
-  third:   { bg: "rgba(56,189,248,0.5)",  glow: "0 0 6px rgba(56,189,248,0.4)",   text: "#ffffff", size: "w-6 h-6" },
-  fifth:   { bg: "rgba(52,211,153,0.5)",  glow: "0 0 6px rgba(52,211,153,0.4)",   text: "#ffffff", size: "w-6 h-6" },
-  seventh: { bg: "rgba(251,146,60,0.55)", glow: "0 0 6px rgba(251,146,60,0.4)",   text: "#ffffff", size: "w-6 h-6" },
-  blue3:   { bg: "rgba(232,121,249,0.5)", glow: "0 0 6px rgba(232,121,249,0.35)", text: "#ffffff", size: "w-5 h-5" },
-  blue5:   { bg: "rgba(232,121,249,0.5)", glow: "0 0 6px rgba(232,121,249,0.35)", text: "#ffffff", size: "w-5 h-5" },
-  majpent: { bg: "rgba(251,191,36,0.18)", glow: "",                               text: "rgba(251,191,36,0.7)", size: "w-4 h-4" },
-  minpent: { bg: "rgba(99,102,241,0.18)", glow: "",                               text: "rgba(99,102,241,0.7)",  size: "w-4 h-4" },
+const ROLE_STYLES: Record<BluesRole, { bg: string; ring?: string; text: string; size: string }> = {
+  root:    { bg: "#c87d10",                                        text: "#1c0901", size: "w-6 h-6" },
+  third:   { bg: "#1e6fa8",                                        text: "#e8f4ff", size: "w-5 h-5" },
+  fifth:   { bg: "#197a52",                                        text: "#e8fff5", size: "w-5 h-5" },
+  seventh: { bg: "#b84718",                                        text: "#fff4ee", size: "w-5 h-5" },
+  blue3:   { bg: "rgba(176,110,214,0.15)", ring: "1.5px solid #b06ed6", text: "#c490e0", size: "w-5 h-5" },
+  blue5:   { bg: "rgba(176,110,214,0.15)", ring: "1.5px solid #b06ed6", text: "#c490e0", size: "w-5 h-5" },
+  majpent: { bg: "rgba(139,105,20,0.15)",  ring: "1px solid #8b6914",   text: "#b89030", size: "w-5 h-5" },
+  minpent: { bg: "rgba(82,84,168,0.15)",   ring: "1px solid #5254a8",   text: "#8486cc", size: "w-5 h-5" },
 };
 
 const ROLE_LABEL: Record<BluesRole, string> = {
@@ -27,6 +27,16 @@ const ROLE_LABEL: Record<BluesRole, string> = {
   blue3: "b3", blue5: "b5",
   majpent: "·", minpent: "·",
 };
+
+const SEMITONE_DEGREE: Record<number, string> = {
+  0: "1", 1: "b2", 2: "2", 3: "b3", 4: "3", 5: "4",
+  6: "b5", 7: "5", 8: "b6", 9: "6", 10: "b7", 11: "7",
+};
+
+function getKeyDegree(note: Note, key: Note): string {
+  const semis = ((NOTES.indexOf(note) - NOTES.indexOf(key)) % 12 + 12) % 12;
+  return SEMITONE_DEGREE[semis] ?? "·";
+}
 
 function getStringStyle(stringIndex: number, height: number): React.CSSProperties {
   if (WOUND.has(stringIndex)) {
@@ -43,15 +53,15 @@ function getStringStyle(stringIndex: number, height: number): React.CSSPropertie
   };
 }
 
-function NoteDot({ role }: { role: BluesRole }) {
+function NoteDot({ role, label }: { role: BluesRole; label?: string }) {
   const s = ROLE_STYLES[role];
   return (
     <div
       className={`${s.size} rounded-full flex items-center justify-center`}
-      style={{ background: s.bg, boxShadow: s.glow || undefined }}
+      style={{ background: s.bg, border: s.ring }}
     >
-      <span className="text-[9px] font-black select-none" style={{ color: s.text }}>
-        {ROLE_LABEL[role]}
+      <span className="text-[9px] font-bold select-none" style={{ color: s.text }}>
+        {label ?? ROLE_LABEL[role]}
       </span>
     </div>
   );
@@ -89,12 +99,13 @@ function FretCell({
   const { note } = getNoteAtPosition(stringIndex, fretNumber);
   const rawRole = inRange && chordNotes ? getBluesNoteRole(note, chordNotes, keyNote) : null;
   const role = rawRole && chordTonesOnly && !CHORD_TONE_ROLES.has(rawRole) ? null : rawRole;
+  const pentLabel = (role === "majpent" || role === "minpent") ? getKeyDegree(note, keyNote) : undefined;
 
   return (
     <div className="flex-1 flex items-center justify-center relative" style={{ minHeight: "30px" }}>
       {role && (
         <div className="absolute z-30">
-          <NoteDot role={role} />
+          <NoteDot role={role} label={pentLabel} />
         </div>
       )}
     </div>
@@ -135,7 +146,10 @@ function StringRow({
     >
       <div className="w-10 shrink-0 flex items-center justify-center z-30">
         {openRole ? (
-          <NoteDot role={openRole} />
+          <NoteDot
+            role={openRole}
+            label={(openRole === "majpent" || openRole === "minpent") ? getKeyDegree(openNote, keyNote) : undefined}
+          />
         ) : (
           <span className="text-xs text-amber-200/60 font-mono">{STRING_LABELS[stringIndex]}</span>
         )}
