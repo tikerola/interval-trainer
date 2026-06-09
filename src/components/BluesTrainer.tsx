@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef, useEffect, useCallback } from "react";
 import { NOTES } from "@/lib/music/notes";
 import { useBluesStore } from "@/store/bluesStore";
 import { useBluesEngine } from "@/hooks/useBluesEngine";
-import { getChordForBar, BLUES_PROGRESSION, DURATION_OPTIONS, FRET_PRESETS } from "@/lib/music/blues";
+import { getChordForBar, BLUES_PROGRESSION, DURATION_OPTIONS } from "@/lib/music/blues";
 import BluesFretboard from "./BluesFretboard";
 
 const ALL_STRINGS = [
@@ -18,6 +18,87 @@ function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+const FRET_MAX = 15;
+const FRET_TICK_LABELS = [0, 3, 5, 7, 9, 12, 15];
+
+function FretRangeSlider({
+  start, end, onChange,
+}: {
+  start: number;
+  end: number;
+  onChange: (start: number, end: number) => void;
+}) {
+  const MIN_SPAN = 2;
+  const trackRef = useRef<HTMLDivElement>(null);
+  const valuesRef = useRef({ start, end });
+  valuesRef.current = { start, end };
+
+  const fretFromX = useCallback((clientX: number) => {
+    const rect = trackRef.current!.getBoundingClientRect();
+    return Math.round(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * FRET_MAX);
+  }, []);
+
+  const leftPct  = (start / FRET_MAX) * 100;
+  const rightPct = (end   / FRET_MAX) * 100;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Fret Range</span>
+        <span className="text-xs text-stone-300 font-mono tabular-nums">{start} – {end}</span>
+      </div>
+
+      <div ref={trackRef} className="relative h-12 flex items-center select-none touch-none">
+        {/* Track */}
+        <div className="absolute inset-x-0 h-1.5 bg-stone-700 rounded-full" style={{ top: "10px" }} />
+
+        {/* Active fill */}
+        <div
+          className="absolute h-1.5 bg-stone-500 rounded-full"
+          style={{ top: "10px", left: `${leftPct}%`, right: `${100 - rightPct}%` }}
+        />
+
+        {/* Tick labels */}
+        {FRET_TICK_LABELS.map((fret) => (
+          <div
+            key={fret}
+            className="absolute bottom-0 text-[9px] text-stone-600 font-mono pointer-events-none"
+            style={{ left: `${(fret / FRET_MAX) * 100}%`, transform: "translateX(-50%)" }}
+          >
+            {fret}
+          </div>
+        ))}
+
+        {/* Handles */}
+        {(["start", "end"] as const).map((handle) => {
+          const pct = handle === "start" ? leftPct : rightPct;
+          return (
+            <div
+              key={handle}
+              className="absolute w-4 h-4 rounded-full bg-stone-300 border-2 border-stone-500 cursor-grab active:cursor-grabbing z-10 shadow-md"
+              style={{ left: `${pct}%`, top: "2px", transform: "translateX(-50%)" }}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.currentTarget.setPointerCapture(e.pointerId);
+              }}
+              onPointerMove={(e) => {
+                if (e.buttons === 0) return;
+                const fret = fretFromX(e.clientX);
+                const { start: s, end: en } = valuesRef.current;
+                if (handle === "start") {
+                  onChange(Math.max(0, Math.min(fret, en - MIN_SPAN)), en);
+                } else {
+                  onChange(s, Math.min(FRET_MAX, Math.max(fret, s + MIN_SPAN)));
+                }
+              }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function BpmStepper() {
@@ -43,9 +124,9 @@ export default function BluesTrainer() {
   useBluesEngine();
 
   const {
-    key, bpm, durationSeconds, fretStart, fretEnd, stringStart, stringEnd,
+    key, bpm, durationSeconds, fretStart, fretEnd, stringStart, stringEnd, chordTonesOnly,
     isPlaying, isCountIn, countInBeat, currentBar, currentBeat, elapsedSeconds,
-    setKey, setDuration, setFretRange, setStringRange, setIsPlaying, stop,
+    setKey, setDuration, setFretRange, setStringRange, setChordTonesOnly, setIsPlaying, stop,
   } = useBluesStore();
 
   const currentChord = useMemo(() => getChordForBar(key, currentBar), [key, currentBar]);
@@ -60,7 +141,6 @@ export default function BluesTrainer() {
 
   const remaining = Math.max(0, durationSeconds - elapsedSeconds);
   const activeStringPreset = ALL_STRINGS.find((s) => s.start === stringStart && s.end === stringEnd);
-  const activeFretPreset = FRET_PRESETS.find((p) => p.start === fretStart && p.end === fretEnd);
 
   return (
     <div className="w-full max-w-5xl flex flex-col gap-6">
@@ -172,6 +252,7 @@ export default function BluesTrainer() {
         fretEnd={fretEnd}
         stringStart={stringStart}
         stringEnd={stringEnd}
+        chordTonesOnly={chordTonesOnly}
       />
 
       {/* Controls */}
@@ -198,24 +279,13 @@ export default function BluesTrainer() {
           </div>
         </div>
 
-        {/* Fret range */}
-        <div className="flex flex-col gap-2">
-          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Fret Range</span>
-          <div className="flex gap-1.5">
-            {FRET_PRESETS.map((p) => (
-              <button
-                key={p.label}
-                onClick={() => setFretRange(p.start, p.end)}
-                className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
-                  activeFretPreset?.label === p.label
-                    ? "bg-stone-500 text-stone-100 font-bold"
-                    : "bg-stone-800 text-stone-400 hover:bg-stone-700"
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+        {/* Fret range slider */}
+        <div className="w-72">
+          <FretRangeSlider
+            start={fretStart}
+            end={fretEnd}
+            onChange={setFretRange}
+          />
         </div>
 
         {/* String range */}
@@ -235,6 +305,33 @@ export default function BluesTrainer() {
                 {s.label}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Chord tones toggle */}
+        <div className="flex flex-col gap-2">
+          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Show Notes</span>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => setChordTonesOnly(false)}
+              className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
+                !chordTonesOnly
+                  ? "bg-stone-500 text-stone-100 font-bold"
+                  : "bg-stone-800 text-stone-400 hover:bg-stone-700"
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setChordTonesOnly(true)}
+              className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
+                chordTonesOnly
+                  ? "bg-amber-400/80 text-stone-900 font-bold"
+                  : "bg-stone-800 text-stone-400 hover:bg-stone-700"
+              }`}
+            >
+              Chord tones
+            </button>
           </div>
         </div>
       </div>
@@ -264,9 +361,13 @@ export default function BluesTrainer() {
         <span><span className="text-sky-400">●</span> 3rd</span>
         <span><span className="text-emerald-400">●</span> 5th</span>
         <span><span className="text-orange-400">●</span> b7</span>
-        <span><span className="text-fuchsia-400">●</span> Blue note</span>
-        <span><span className="text-amber-400/40">●</span> Maj pentatonic</span>
-        <span><span className="text-indigo-400/60">●</span> Min pentatonic</span>
+        {!chordTonesOnly && (
+          <>
+            <span><span className="text-fuchsia-400">●</span> Blue notes (b3, b5)</span>
+            <span><span className="text-amber-400/40">●</span> Maj pentatonic</span>
+            <span><span className="text-indigo-400/60">●</span> Min pentatonic</span>
+          </>
+        )}
       </div>
 
     </div>

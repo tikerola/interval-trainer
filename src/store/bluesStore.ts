@@ -9,6 +9,7 @@ interface BluesState {
   fretEnd: number;
   stringStart: number; // 0 = low E, 5 = high e
   stringEnd: number;
+  chordTonesOnly: boolean;
 
   isPlaying: boolean;
   isCountIn: boolean;
@@ -22,6 +23,7 @@ interface BluesState {
   setDuration: (seconds: number) => void;
   setFretRange: (start: number, end: number) => void;
   setStringRange: (start: number, end: number) => void;
+  setChordTonesOnly: (v: boolean) => void;
   setIsPlaying: (v: boolean) => void;
   setIsCountIn: (v: boolean) => void;
   setCountInBeat: (beat: number) => void;
@@ -39,6 +41,7 @@ export const useBluesStore = create<BluesState>((set) => ({
   fretEnd: 4,
   stringStart: 0,
   stringEnd: 5,
+  chordTonesOnly: true,
 
   isPlaying: false,
   isCountIn: false,
@@ -52,6 +55,7 @@ export const useBluesStore = create<BluesState>((set) => ({
   setDuration: (seconds) => set({ durationSeconds: seconds }),
   setFretRange: (start, end) => set({ fretStart: start, fretEnd: end }),
   setStringRange: (start, end) => set({ stringStart: start, stringEnd: end }),
+  setChordTonesOnly: (v) => set({ chordTonesOnly: v }),
   setIsPlaying: (v) => set({ isPlaying: v }),
   setIsCountIn: (v) => set({ isCountIn: v }),
   setCountInBeat: (beat) => set({ countInBeat: beat }),

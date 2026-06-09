@@ -16,14 +16,16 @@ const ROLE_STYLES: Record<BluesRole, { bg: string; glow: string; text: string; s
   third:   { bg: "rgba(56,189,248,0.5)",  glow: "0 0 6px rgba(56,189,248,0.4)",   text: "#ffffff", size: "w-6 h-6" },
   fifth:   { bg: "rgba(52,211,153,0.5)",  glow: "0 0 6px rgba(52,211,153,0.4)",   text: "#ffffff", size: "w-6 h-6" },
   seventh: { bg: "rgba(251,146,60,0.55)", glow: "0 0 6px rgba(251,146,60,0.4)",   text: "#ffffff", size: "w-6 h-6" },
-  blue:    { bg: "rgba(232,121,249,0.5)", glow: "0 0 6px rgba(232,121,249,0.35)", text: "#ffffff", size: "w-5 h-5" },
+  blue3:   { bg: "rgba(232,121,249,0.5)", glow: "0 0 6px rgba(232,121,249,0.35)", text: "#ffffff", size: "w-5 h-5" },
+  blue5:   { bg: "rgba(232,121,249,0.5)", glow: "0 0 6px rgba(232,121,249,0.35)", text: "#ffffff", size: "w-5 h-5" },
   majpent: { bg: "rgba(251,191,36,0.18)", glow: "",                               text: "rgba(251,191,36,0.7)", size: "w-4 h-4" },
   minpent: { bg: "rgba(99,102,241,0.18)", glow: "",                               text: "rgba(99,102,241,0.7)",  size: "w-4 h-4" },
 };
 
 const ROLE_LABEL: Record<BluesRole, string> = {
   root: "R", third: "3", fifth: "5", seventh: "b7",
-  blue: "b", majpent: "·", minpent: "·",
+  blue3: "b3", blue5: "b5",
+  majpent: "·", minpent: "·",
 };
 
 function getStringStyle(stringIndex: number, height: number): React.CSSProperties {
@@ -67,21 +69,26 @@ function InlayDot() {
   );
 }
 
+const CHORD_TONE_ROLES = new Set(["root", "third", "fifth", "seventh"]);
+
 function FretCell({
   stringIndex,
   fretNumber,
   chordNotes,
   keyNote,
   inRange,
+  chordTonesOnly,
 }: {
   stringIndex: number;
   fretNumber: number;
   chordNotes: [Note, Note, Note, Note] | null;
   keyNote: Note;
   inRange: boolean;
+  chordTonesOnly: boolean;
 }) {
   const { note } = getNoteAtPosition(stringIndex, fretNumber);
-  const role = inRange && chordNotes ? getBluesNoteRole(note, chordNotes, keyNote) : null;
+  const rawRole = inRange && chordNotes ? getBluesNoteRole(note, chordNotes, keyNote) : null;
+  const role = rawRole && chordTonesOnly && !CHORD_TONE_ROLES.has(rawRole) ? null : rawRole;
 
   return (
     <div className="flex-1 flex items-center justify-center relative" style={{ minHeight: "30px" }}>
@@ -103,6 +110,7 @@ function StringRow({
   fretStart,
   fretEnd,
   inStringRange,
+  chordTonesOnly,
 }: {
   stringIndex: number;
   isFirst: boolean;
@@ -112,11 +120,13 @@ function StringRow({
   fretStart: number;
   fretEnd: number;
   inStringRange: boolean;
+  chordTonesOnly: boolean;
 }) {
   const h = STRING_HEIGHTS[stringIndex];
   const openNote = getNoteAtPosition(stringIndex, 0).note;
   const openInRange = inStringRange && fretStart === 0 && chordNotes !== null;
-  const openRole = openInRange ? getBluesNoteRole(openNote, chordNotes!, keyNote) : null;
+  const rawOpenRole = openInRange ? getBluesNoteRole(openNote, chordNotes!, keyNote) : null;
+  const openRole = rawOpenRole && chordTonesOnly && !CHORD_TONE_ROLES.has(rawOpenRole) ? null : rawOpenRole;
 
   return (
     <div
@@ -152,6 +162,7 @@ function StringRow({
               chordNotes={chordNotes}
               keyNote={keyNote}
               inRange={inRange}
+              chordTonesOnly={chordTonesOnly}
             />
           );
         })}
@@ -167,6 +178,7 @@ export default function BluesFretboard({
   fretEnd,
   stringStart,
   stringEnd,
+  chordTonesOnly,
 }: {
   keyNote: Note;
   chordNotes: [Note, Note, Note, Note] | null;
@@ -174,6 +186,7 @@ export default function BluesFretboard({
   fretEnd: number;
   stringStart: number;
   stringEnd: number;
+  chordTonesOnly: boolean;
 }) {
   return (
     <div className="w-full max-w-5xl">
@@ -184,6 +197,9 @@ export default function BluesFretboard({
           </div>
         ))}
       </div>
+
+      {/* Wrapper so curtains sit outside the clipPath */}
+      <div className="relative">
 
       <div
         className="relative rounded-r-lg overflow-hidden border border-stone-800/80"
@@ -244,6 +260,7 @@ export default function BluesFretboard({
               fretStart={fretStart}
               fretEnd={fretEnd}
               inStringRange={stringIndex >= stringStart && stringIndex <= stringEnd}
+              chordTonesOnly={chordTonesOnly}
             />
           ))}
         </div>
@@ -274,6 +291,34 @@ export default function BluesFretboard({
           ))}
         </div>
       </div>
+
+      {/* Fret-range curtains — outside clipPath so they stay rectangular */}
+      <div className="absolute inset-0 pointer-events-none z-[33]">
+        {fretStart > 0 && (
+          <div
+            className="absolute top-0 bottom-0"
+            style={{
+              left: 0,
+              width: `calc(40px + ${fretStart - 1} / ${FRET_COUNT} * (100% - 40px))`,
+              background: "rgba(0,0,0,0.6)",
+              transition: "width 0.15s ease-out",
+            }}
+          />
+        )}
+        {fretEnd < FRET_COUNT && (
+          <div
+            className="absolute top-0 bottom-0"
+            style={{
+              left: `calc(40px + ${fretEnd} / ${FRET_COUNT} * (100% - 40px))`,
+              right: 0,
+              background: "rgba(0,0,0,0.6)",
+              transition: "left 0.15s ease-out",
+            }}
+          />
+        )}
+      </div>
+
+      </div>{/* end wrapper */}
 
       <div className="flex mt-1 pl-10">
         {Array.from({ length: FRET_COUNT }, (_, i) => {

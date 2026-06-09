@@ -4,7 +4,7 @@ import { getScaleNotes, SCALES } from "./scales";
 export const BLUES_PROGRESSION = [1, 1, 1, 1, 4, 4, 1, 1, 5, 4, 1, 5] as const;
 
 export type BluesDegree = 1 | 4 | 5;
-export type BluesRole = "root" | "third" | "fifth" | "seventh" | "blue" | "majpent" | "minpent";
+export type BluesRole = "root" | "third" | "fifth" | "seventh" | "blue3" | "blue5" | "majpent" | "minpent";
 
 const MAJ_PENT = SCALES.find((s) => s.name === "Maj Pent")!;
 const MIN_PENT = SCALES.find((s) => s.name === "Min Pent")!;
@@ -52,7 +52,8 @@ export function getBluesNoteRole(
   if (note === chordNotes[3]) return "seventh";
 
   const blues = getBlueNotes(key);
-  if (blues.includes(note)) return "blue";
+  if (note === blues[0]) return "blue3"; // b3
+  if (note === blues[1]) return "blue5"; // b5
 
   if (getScaleNotes(key, MAJ_PENT).includes(note)) return "majpent";
   if (getScaleNotes(key, MIN_PENT).includes(note)) return "minpent";
