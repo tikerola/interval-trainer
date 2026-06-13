@@ -81,7 +81,7 @@ function InlayDot() {
   );
 }
 
-const CHORD_TONE_ROLES = new Set(["root", "third", "fifth", "seventh"]);
+const TRIAD_ROLES = new Set<BluesRole>(["root", "third", "fifth"]);
 
 function ActiveNotePing() {
   return (
@@ -92,37 +92,71 @@ function ActiveNotePing() {
   );
 }
 
+function ArticulationDot({ type }: { type: "bend" | "slide" }) {
+  const symbol = type === "bend" ? "↑" : "→";
+  return (
+    <div
+      className="w-5 h-5 rounded-full flex items-center justify-center"
+      style={{
+        background: "rgba(255,160,20,0.18)",
+        border: "1.5px solid rgba(255,160,20,0.75)",
+        boxShadow: "0 0 7px rgba(255,160,20,0.55)",
+      }}
+    >
+      <span className="text-[9px] font-bold select-none" style={{ color: "#ffb020" }}>
+        {symbol}
+      </span>
+    </div>
+  );
+}
+
 function FretCell({
   stringIndex,
   fretNumber,
   chordNotes,
   keyNote,
   inRange,
-  chordTonesOnly,
+  noteDisplay,
   activeSoloNote,
+  activeSoloNoteSecondary,
+  isRecording,
+  onFretClick,
 }: {
   stringIndex: number;
   fretNumber: number;
   chordNotes: [Note, Note, Note, Note] | null;
   keyNote: Note;
   inRange: boolean;
-  chordTonesOnly: boolean;
+  noteDisplay: "triad" | "pentatonic";
   activeSoloNote: { stringIndex: number; fretNumber: number } | null;
+  activeSoloNoteSecondary: { stringIndex: number; fretNumber: number; type: "bend" | "slide" } | null;
+  isRecording?: boolean;
+  onFretClick?: () => void;
 }) {
   const { note } = getNoteAtPosition(stringIndex, fretNumber);
   const rawRole = inRange && chordNotes ? getBluesNoteRole(note, chordNotes, keyNote) : null;
-  const role = rawRole && chordTonesOnly && !CHORD_TONE_ROLES.has(rawRole) ? null : rawRole;
+  const role = rawRole && noteDisplay === "triad" && !TRIAD_ROLES.has(rawRole) ? null : rawRole;
   const pentLabel = (role === "majpent" || role === "minpent") ? getKeyDegree(note, keyNote) : undefined;
   const isActive = activeSoloNote?.stringIndex === stringIndex && activeSoloNote?.fretNumber === fretNumber;
+  const isSecondary = activeSoloNoteSecondary?.stringIndex === stringIndex && activeSoloNoteSecondary?.fretNumber === fretNumber;
 
   return (
-    <div className="flex-1 flex items-center justify-center relative" style={{ minHeight: "30px" }}>
+    <div
+      className={`flex-1 flex items-center justify-center relative transition-colors${isRecording ? " cursor-crosshair hover:bg-white/[0.05]" : ""}`}
+      style={{ minHeight: "30px" }}
+      onClick={isRecording ? onFretClick : undefined}
+    >
       {isActive && (
         <div className="absolute z-40">
           <ActiveNotePing />
         </div>
       )}
-      {role && !isActive && (
+      {isSecondary && !isActive && (
+        <div className="absolute z-40">
+          <ArticulationDot type={activeSoloNoteSecondary!.type} />
+        </div>
+      )}
+      {role && !isActive && !isSecondary && (
         <div className="absolute z-30">
           <NoteDot role={role} label={pentLabel} />
         </div>
@@ -140,8 +174,11 @@ function StringRow({
   fretStart,
   fretEnd,
   inStringRange,
-  chordTonesOnly,
+  noteDisplay,
   activeSoloNote,
+  activeSoloNoteSecondary,
+  isRecording,
+  onFretClick,
 }: {
   stringIndex: number;
   isFirst: boolean;
@@ -151,23 +188,31 @@ function StringRow({
   fretStart: number;
   fretEnd: number;
   inStringRange: boolean;
-  chordTonesOnly: boolean;
+  noteDisplay: "triad" | "pentatonic";
   activeSoloNote: { stringIndex: number; fretNumber: number } | null;
+  activeSoloNoteSecondary: { stringIndex: number; fretNumber: number; type: "bend" | "slide" } | null;
+  isRecording?: boolean;
+  onFretClick?: (stringIndex: number, fretNumber: number) => void;
 }) {
   const h = STRING_HEIGHTS[stringIndex];
   const openNote = getNoteAtPosition(stringIndex, 0).note;
   const openInRange = inStringRange && fretStart === 0 && chordNotes !== null;
   const rawOpenRole = openInRange ? getBluesNoteRole(openNote, chordNotes!, keyNote) : null;
-  const openRole = rawOpenRole && chordTonesOnly && !CHORD_TONE_ROLES.has(rawOpenRole) ? null : rawOpenRole;
+  const openRole = rawOpenRole && noteDisplay === "triad" && !TRIAD_ROLES.has(rawOpenRole) ? null : rawOpenRole;
 
   return (
     <div
       className="relative flex items-center"
       style={{ paddingTop: isFirst ? "8px" : "2px", paddingBottom: isLast ? "8px" : "2px" }}
     >
-      <div className="w-10 shrink-0 flex items-center justify-center z-40">
+      <div
+        className={`w-10 shrink-0 flex items-center justify-center z-40 transition-colors${isRecording ? " cursor-crosshair hover:bg-white/[0.05]" : ""}`}
+        onClick={isRecording ? () => onFretClick?.(stringIndex, 0) : undefined}
+      >
         {activeSoloNote?.stringIndex === stringIndex && activeSoloNote?.fretNumber === 0 ? (
           <ActiveNotePing />
+        ) : activeSoloNoteSecondary?.stringIndex === stringIndex && activeSoloNoteSecondary?.fretNumber === 0 ? (
+          <ArticulationDot type={activeSoloNoteSecondary.type} />
         ) : openRole ? (
           <NoteDot
             role={openRole}
@@ -199,8 +244,11 @@ function StringRow({
               chordNotes={chordNotes}
               keyNote={keyNote}
               inRange={inRange}
-              chordTonesOnly={chordTonesOnly}
+              noteDisplay={noteDisplay}
               activeSoloNote={activeSoloNote}
+              activeSoloNoteSecondary={activeSoloNoteSecondary}
+              isRecording={isRecording}
+              onFretClick={onFretClick ? () => onFretClick(stringIndex, fret) : undefined}
             />
           );
         })}
@@ -216,9 +264,12 @@ export default function BluesFretboard({
   fretEnd,
   stringStart,
   stringEnd,
-  chordTonesOnly,
+  noteDisplay,
   activeSoloNote,
+  activeSoloNoteSecondary,
   onFretRangeChange,
+  isRecording,
+  onFretClick,
 }: {
   keyNote: Note;
   chordNotes: [Note, Note, Note, Note] | null;
@@ -226,9 +277,12 @@ export default function BluesFretboard({
   fretEnd: number;
   stringStart: number;
   stringEnd: number;
-  chordTonesOnly: boolean;
+  noteDisplay: "triad" | "pentatonic";
   activeSoloNote: { stringIndex: number; fretNumber: number } | null;
+  activeSoloNoteSecondary: { stringIndex: number; fretNumber: number; type: "bend" | "slide" } | null;
   onFretRangeChange?: (start: number, end: number) => void;
+  isRecording?: boolean;
+  onFretClick?: (stringIndex: number, fretNumber: number) => void;
 }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
@@ -342,8 +396,11 @@ export default function BluesFretboard({
               fretStart={fretStart}
               fretEnd={fretEnd}
               inStringRange={stringIndex >= stringStart && stringIndex <= stringEnd}
-              chordTonesOnly={chordTonesOnly}
+              noteDisplay={noteDisplay}
               activeSoloNote={activeSoloNote}
+              activeSoloNoteSecondary={activeSoloNoteSecondary}
+              isRecording={isRecording}
+              onFretClick={onFretClick}
             />
           ))}
         </div>
@@ -422,13 +479,15 @@ export default function BluesFretboard({
             <div className="absolute inset-y-0 left-[5px] w-px bg-amber-400/25 group-hover:bg-amber-400/55 transition-colors" />
           </div>
 
-          {/* Center move handle */}
-          <div
-            className="absolute inset-y-0 left-3 right-3 cursor-grab active:cursor-grabbing pointer-events-auto"
-            onPointerDown={(e) => startDrag(e, "move")}
-            onPointerMove={onDragMove}
-            onPointerUp={onDragEnd}
-          />
+          {/* Center move handle — disabled while recording so fret clicks pass through */}
+          {!isRecording && (
+            <div
+              className="absolute inset-y-0 left-3 right-3 cursor-grab active:cursor-grabbing pointer-events-auto"
+              onPointerDown={(e) => startDrag(e, "move")}
+              onPointerMove={onDragMove}
+              onPointerUp={onDragEnd}
+            />
+          )}
 
           {/* Right resize handle */}
           <div

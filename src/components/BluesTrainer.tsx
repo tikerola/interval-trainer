@@ -1,29 +1,25 @@
 "use client";
 
-import { useMemo } from "react";
-import { NOTES } from "@/lib/music/notes";
-import { useBluesStore } from "@/store/bluesStore";
-import { useBluesEngine } from "@/hooks/useBluesEngine";
-import { getChordForBar, BLUES_PROGRESSION, DURATION_OPTIONS } from "@/lib/music/blues";
-import { SOLO_RHYTHM_LABELS, type SoloRhythm } from "@/lib/music/soloGenerator";
+import { useMemo, useCallback, useState } from "react";
+import { NOTES, getNoteAtPosition } from "@/lib/music/notes";
+import {
+  usePhraseBuilderStore, DURATION_LABELS, AVAILABLE_DURATIONS,
+  SLOTS_PER_BAR, SLOTS_PER_BEAT,
+  type BluesDegree, type NoteDuration, type PhraseGrid,
+} from "@/store/phraseBuilderStore";
+import { usePhraseBuilderEngine } from "@/hooks/usePhraseBuilderEngine";
+import { getChordAtSlot, getSectionStartSlot, getTotalSlots } from "@/lib/music/phraseBuilder";
 import BluesFretboard from "./BluesFretboard";
+import PhraseTimeline from "./PhraseTimeline";
 
-const ALL_STRINGS = [
-  { label: "All (1–6)", start: 0, end: 5 },
-  { label: "Low (1–3)", start: 0, end: 2 },
-  { label: "Mid (2–5)", start: 1, end: 4 },
-  { label: "High (4–6)", start: 3, end: 5 },
-] as const;
-
-function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
+const DEGREE_OPTIONS: { value: BluesDegree; label: string }[] = [
+  { value: 1, label: "I" },
+  { value: 4, label: "IV" },
+  { value: 5, label: "V" },
+];
 
 function BpmStepper() {
-  const { bpm, setBpm, isPlaying } = useBluesStore();
+  const { bpm, setBpm, isPlaying } = usePhraseBuilderStore();
   return (
     <div className="flex items-center gap-1">
       <button
@@ -31,7 +27,7 @@ function BpmStepper() {
         onClick={() => setBpm(Math.max(40, bpm - 5))}
         className="w-7 h-7 rounded bg-stone-800 text-stone-300 hover:bg-stone-700 disabled:opacity-30 font-mono text-sm transition-colors"
       >−</button>
-      <span className="w-14 text-center font-mono text-sm text-stone-200">{bpm} BPM</span>
+      <span className="w-14 text-center font-mono text-sm text-stone-200 tabular-nums">{bpm} BPM</span>
       <button
         disabled={isPlaying || bpm >= 220}
         onClick={() => setBpm(Math.min(220, bpm + 5))}
@@ -41,36 +37,132 @@ function BpmStepper() {
   );
 }
 
-export default function BluesTrainer() {
-  useBluesEngine();
-
-  const {
-    key, bpm, durationSeconds, fretStart, fretEnd, stringStart, stringEnd,
-    chordTonesOnly, soloEnabled, soloRhythm, activeSoloNote,
-    isPlaying, isCountIn, countInBeat, currentBar, currentBeat, elapsedSeconds,
-    setKey, setDuration, setFretRange, setStringRange,
-    setChordTonesOnly, setSoloEnabled, setSoloRhythm, setIsPlaying, stop,
-  } = useBluesStore();
-
-  const currentChord = useMemo(() => getChordForBar(key, currentBar), [key, currentBar]);
-
-  const nextBarIndex = (currentBar % 12); // 0-indexed next bar (wraps to 0 = bar 1)
-  const nextDegree = BLUES_PROGRESSION[nextBarIndex];
-  const showNextChord = nextDegree !== BLUES_PROGRESSION[currentBar - 1];
-  const nextChord = useMemo(
-    () => getChordForBar(key, nextBarIndex === 0 ? 1 : nextBarIndex + 1),
-    [key, nextBarIndex]
-  );
-
-  const remaining = Math.max(0, durationSeconds - elapsedSeconds);
-  const activeStringPreset = ALL_STRINGS.find((s) => s.start === stringStart && s.end === stringEnd);
+// Shows each section as a labeled block; highlights the currently playing section+bar during jam
+function ChordProgressionBar({
+  sections,
+  phraseGrid,
+  playheadSlot,
+  isPlaying,
+  keyNote,
+}: {
+  sections: ReturnType<typeof usePhraseBuilderStore.getState>["sections"];
+  phraseGrid: PhraseGrid;
+  playheadSlot: number;
+  isPlaying: boolean;
+  keyNote: string;
+}) {
+  const spb = SLOTS_PER_BAR[phraseGrid];
+  const totalSlots = getTotalSlots(sections, phraseGrid);
 
   return (
-    <div className="w-full max-w-5xl flex flex-col gap-6">
+    <div className="flex gap-0.5">
+      {sections.map((sec, sIdx) => {
+        const secStart = getSectionStartSlot(sections, sIdx, phraseGrid);
+        const secSlots = sec.bars * spb;
+        const isCurrent = isPlaying && playheadSlot >= secStart && playheadSlot < secStart + secSlots;
+        const barInSection = isCurrent ? Math.floor((playheadSlot - secStart) / spb) : -1;
+        const chord = getChordAtSlot(keyNote as Parameters<typeof getChordAtSlot>[0], sections, secStart, phraseGrid);
 
-      {/* Session header */}
+        const secEnd = secStart + secSlots;
+        const progress = !isPlaying ? 0
+          : isCurrent ? (playheadSlot - secStart) / secSlots
+          : playheadSlot >= secEnd ? 1
+          : 0;
+
+        return (
+          <div
+            key={sec.id}
+            className={`flex-1 rounded px-2 py-1.5 border transition-all duration-200 ${
+              isCurrent
+                ? "bg-amber-400/15 border-amber-400/50"
+                : "bg-stone-800/40 border-stone-700/30"
+            }`}
+            style={{ flex: `${secSlots / totalSlots}` }}
+          >
+            <div className={`text-base font-bold font-mono leading-tight ${isCurrent ? "text-amber-300" : "text-stone-500"}`}>
+              {chord.name}
+            </div>
+            <div className="text-[9px] font-mono text-stone-600 mt-0.5">
+              {isCurrent ? `bar ${barInSection + 1} / ${sec.bars}` : `× ${sec.bars}`}
+            </div>
+            <div className="mt-1.5 h-1 rounded-full bg-stone-700/60 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-[width] duration-75"
+                style={{
+                  width: `${progress * 100}%`,
+                  background: isCurrent ? "#fbbf24" : "#78716c",
+                }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function BluesTrainer() {
+  const { previewNote } = usePhraseBuilderEngine();
+  const [noteDisplay, setNoteDisplay] = useState<"triad" | "pentatonic">("triad");
+  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
+
+  const {
+    key, mode, phraseGrid, sections, notes, selectedDuration,
+    cursorSlot, fretStart, fretEnd, isPlaying, playheadSlot,
+    activePhraseNote,
+    setKey, setMode, setGrid, addSection, removeSection, updateSection, setSections,
+    setSelectedDuration, setCursorSlot, setFretRange,
+    placeNote, removeNote, updateNote, updateNotes, clearNotes,
+    setIsPlaying, stop,
+  } = usePhraseBuilderStore();
+
+  const slotsPerBar  = SLOTS_PER_BAR[phraseGrid];
+  const slotsPerBeat = SLOTS_PER_BEAT[phraseGrid];
+
+  const displayChord = useMemo(
+    () => getChordAtSlot(key, sections, isPlaying ? playheadSlot : cursorSlot, phraseGrid),
+    [key, sections, isPlaying, playheadSlot, cursorSlot, phraseGrid],
+  );
+
+  const isEditing = mode === "record" && !isPlaying;
+
+  const selectedNotes = notes.filter((n) => selectedNoteIds.includes(n.id));
+  const hasSelection = selectedNotes.length > 0;
+
+  // Duration picker: show the common duration if all selected notes agree, else null (mixed)
+  const activeDuration: typeof selectedDuration | null = hasSelection
+    ? selectedNotes.every((n) => n.duration === selectedNotes[0].duration)
+      ? selectedNotes[0].duration
+      : null
+    : selectedDuration;
+
+  // Infer grid from a note's duration; ambiguous durations (4n/2n) return null
+  const inferGrid = (dur: typeof selectedDuration): PhraseGrid | null =>
+    dur === "16t" || dur === "8t" ? "triplet"
+    : dur === "16n" || dur === "8n" ? "straight"
+    : null;
+
+  // Show the common inferred grid if all selected notes agree, else null (mixed)
+  const selectedNoteGrid: PhraseGrid | null = hasSelection
+    ? (() => {
+        const grids = selectedNotes.map((n) => inferGrid(n.duration));
+        const first = grids[0];
+        return grids.every((g) => g === first) ? first : null;
+      })()
+    : null;
+  const displayGrid = selectedNoteGrid ?? phraseGrid;
+
+  const handleFretClick = useCallback((stringIndex: number, fretNumber: number) => {
+    const { note, octave } = getNoteAtPosition(stringIndex, fretNumber);
+    placeNote(fretNumber, stringIndex, note, octave);
+    previewNote(note, octave, selectedDuration);
+  }, [placeNote, previewNote, selectedDuration]);
+
+  return (
+    <div className="w-full max-w-5xl flex flex-col gap-5">
+
+      {/* ── Top row: Key, BPM, Mode ── */}
       <div className="flex items-center justify-between flex-wrap gap-4">
-        {/* Key selector */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Key</span>
           <div className="flex flex-wrap gap-1">
@@ -84,251 +176,283 @@ export default function BluesTrainer() {
                     ? "bg-amber-400 text-stone-900 font-bold"
                     : "bg-stone-800 text-stone-300 hover:bg-stone-700 disabled:opacity-40"
                 }`}
-              >
-                {n}
-              </button>
+              >{n}</button>
             ))}
           </div>
         </div>
 
-        {/* BPM + Timer */}
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
           <BpmStepper />
-          <div className="text-right">
-            <div className="text-2xl font-mono text-stone-200 tabular-nums">
-              {isPlaying ? formatTime(remaining) : formatTime(durationSeconds)}
-            </div>
-            <div className="text-[10px] text-stone-500 uppercase tracking-widest font-mono">
-              {isPlaying ? "remaining" : "duration"}
-            </div>
+          <div className="flex gap-0.5 p-0.5 bg-stone-800 rounded">
+            {(["triad", "pentatonic"] as const).map((d) => (
+              <button
+                key={d}
+                onClick={() => setNoteDisplay(d)}
+                className={`px-3 py-1 rounded font-mono text-xs transition-all duration-150 ${
+                  noteDisplay === d
+                    ? "bg-stone-600 text-stone-100 font-bold"
+                    : "text-stone-400 hover:text-stone-200"
+                }`}
+              >{d === "triad" ? "Triads" : "Pentatonic"}</button>
+            ))}
+          </div>
+          <div className="flex gap-0.5 p-0.5 bg-stone-800 rounded">
+            {(["jam", "record"] as const).map((m) => (
+              <button
+                key={m}
+                disabled={isPlaying}
+                onClick={() => setMode(m)}
+                className={`px-3 py-1 rounded font-mono text-xs transition-all duration-150 ${
+                  mode === m
+                    ? "bg-stone-600 text-stone-100 font-bold"
+                    : "text-stone-400 hover:text-stone-200 disabled:opacity-40"
+                }`}
+              >{m === "jam" ? "Jam" : "Record"}</button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Chord display */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <div>
-            <div
-              className="text-5xl font-black font-mono tabular-nums tracking-tight transition-all duration-300"
-              style={{ color: isPlaying ? "#fbbf24" : "rgba(251,191,36,0.35)" }}
+
+      {/* ── Section builder ── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Sections</span>
+        <button
+          disabled={isPlaying}
+          onClick={() => setSections([
+            { degree: 1, bars: 4 },
+            { degree: 4, bars: 2 },
+            { degree: 1, bars: 2 },
+            { degree: 5, bars: 1 },
+            { degree: 4, bars: 1 },
+            { degree: 1, bars: 1 },
+            { degree: 5, bars: 1 },
+          ])}
+          className="px-2.5 py-1 rounded bg-stone-700/60 border border-stone-600/40 text-amber-400/80 hover:text-amber-300 hover:bg-stone-700 font-mono text-xs transition-colors disabled:opacity-30"
+          title="Standard 12-bar blues: I×4, IV×2, I×2, V×1, IV×1, I×2"
+        >12-bar blues</button>
+        {sections.map((sec, idx) => (
+          <div key={sec.id} className="flex items-center gap-1 bg-stone-800/70 rounded px-2 py-1 border border-stone-700/40">
+            <span className="text-[10px] text-stone-500 font-mono mr-0.5">{idx + 1}.</span>
+            <select
+              disabled={isPlaying}
+              value={sec.degree}
+              onChange={(e) => updateSection(sec.id, { degree: Number(e.target.value) as BluesDegree })}
+              className="bg-transparent text-amber-300 font-bold font-mono text-xs border-none outline-none cursor-pointer disabled:opacity-40"
             >
-              {currentChord.name}
-            </div>
-            <div className="text-xs text-stone-500 font-mono uppercase tracking-widest mt-0.5">
-              current chord
-            </div>
-          </div>
-
-          {showNextChord && isPlaying && (
-            <div className="animate-pulse">
-              <div className="text-2xl font-bold font-mono text-stone-400">
-                → {nextChord.name}
-              </div>
-              <div className="text-xs text-stone-600 font-mono uppercase tracking-widest mt-0.5">
-                next
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="text-right">
-          <div className="text-xl font-mono text-stone-400">
-            {isCountIn ? (
-              <span className="text-stone-500 tracking-widest text-sm">COUNT IN</span>
-            ) : isPlaying ? (
-              <>
-                <span className="text-stone-200">Bar {currentBar}</span>
-                <span className="text-stone-600"> / 12</span>
-              </>
-            ) : (
-              <span className="text-stone-600">— / 12</span>
+              {DEGREE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value} className="bg-stone-900 text-stone-100">{o.label}</option>
+              ))}
+            </select>
+            <button
+              disabled={isPlaying || sec.bars <= 1}
+              onClick={() => updateSection(sec.id, { bars: sec.bars - 1 })}
+              className="w-5 h-5 rounded text-stone-400 hover:text-stone-200 disabled:opacity-30 font-mono text-xs transition-colors"
+            >−</button>
+            <span className="w-8 text-center font-mono text-xs text-stone-200 tabular-nums">{sec.bars}b</span>
+            <button
+              disabled={isPlaying || sec.bars >= 4}
+              onClick={() => updateSection(sec.id, { bars: sec.bars + 1 })}
+              className="w-5 h-5 rounded text-stone-400 hover:text-stone-200 disabled:opacity-30 font-mono text-xs transition-colors"
+            >+</button>
+            {sections.length > 1 && (
+              <button
+                disabled={isPlaying}
+                onClick={() => removeSection(sec.id)}
+                className="ml-0.5 text-stone-600 hover:text-stone-300 disabled:opacity-30 font-mono text-xs transition-colors"
+              >×</button>
             )}
           </div>
-          {(isCountIn || isPlaying) && (
-            <div className="flex gap-1 justify-end mt-1">
-              {[1, 2, 3, 4].map((b) => {
-                const active = isCountIn ? b === countInBeat : b === currentBeat;
-                const color = isCountIn ? "rgba(255,255,255,0.7)" : "#fbbf24";
-                const glow = isCountIn ? "0 0 6px rgba(255,255,255,0.5)" : "0 0 6px rgba(251,191,36,0.8)";
+        ))}
+        {sections.length < 8 && (
+          <button
+            disabled={isPlaying}
+            onClick={addSection}
+            className="px-2.5 py-1 rounded bg-stone-800/50 border border-stone-700/40 text-stone-400 hover:text-stone-200 font-mono text-xs transition-colors disabled:opacity-30"
+          >+ Add</button>
+        )}
+      </div>
+
+      {/* ── Jam: chord progression bar ── */}
+      {mode === "jam" && (
+        <ChordProgressionBar
+          sections={sections}
+          phraseGrid={phraseGrid}
+          playheadSlot={playheadSlot}
+          isPlaying={isPlaying}
+          keyNote={key}
+        />
+      )}
+
+      {/* ── Current chord + fret range ── */}
+      <div className="flex items-end gap-3">
+        <div>
+          <div
+            className="text-5xl font-black font-mono tracking-tight transition-all duration-200"
+            style={{ color: isPlaying ? "#fbbf24" : "rgba(251,191,36,0.45)" }}
+          >
+            {displayChord.name}
+          </div>
+          <div className="text-[10px] text-stone-500 font-mono uppercase tracking-widest mt-0.5">
+            {isPlaying ? "playing" : mode === "record" ? "at cursor" : "chord"}
+          </div>
+        </div>
+        <div className="ml-auto text-right">
+          <div className="text-xs font-mono text-stone-400 tabular-nums">frets {fretStart}–{fretEnd}</div>
+          <div className="text-[10px] text-stone-600 font-mono uppercase tracking-widest">drag edges to adjust</div>
+        </div>
+      </div>
+
+      {/* ── Fretboard ── */}
+      <BluesFretboard
+        keyNote={key}
+        chordNotes={displayChord.notes}
+        fretStart={fretStart}
+        fretEnd={fretEnd}
+        stringStart={0}
+        stringEnd={5}
+        noteDisplay={noteDisplay}
+        activeSoloNote={activePhraseNote}
+        activeSoloNoteSecondary={null}
+        onFretRangeChange={setFretRange}
+        isRecording={isEditing}
+        onFretClick={isEditing ? handleFretClick : undefined}
+      />
+
+      {/* ── Record controls: grid + note duration ── */}
+      {mode === "record" && (
+        <div className="flex flex-wrap gap-x-8 gap-y-3 items-start pt-1 border-t border-stone-800">
+
+          {/* Grid / feel */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">
+              {hasSelection ? "Feel" : "Grid"}
+            </span>
+            <div className="flex gap-1">
+              {(["straight", "triplet"] as PhraseGrid[]).map((g) => {
+                const isActive = displayGrid === g;
+                const isNoteGrid = hasSelection && selectedNoteGrid === g;
                 return (
-                  <div
-                    key={b}
-                    className="w-2 h-2 rounded-full transition-all duration-75"
-                    style={{
-                      background: active ? color : "rgba(255,255,255,0.1)",
-                      boxShadow: active ? glow : "none",
-                    }}
-                  />
+                  <button
+                    key={g}
+                    disabled={isPlaying}
+                    onClick={() => !hasSelection && setGrid(g)}
+                    className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
+                      isActive
+                        ? isNoteGrid
+                          ? "bg-amber-500/80 text-stone-900 font-bold"
+                          : hasSelection
+                            ? "bg-stone-500 text-stone-200 font-bold"
+                            : "bg-stone-600 text-stone-100 font-bold"
+                        : "bg-stone-800 text-stone-400 hover:bg-stone-700 disabled:opacity-40"
+                    } ${hasSelection ? "cursor-default" : ""}`}
+                  >
+                    {g === "straight" ? "Straight" : "Triplet"}
+                  </button>
                 );
               })}
             </div>
+          </div>
+
+          {/* Note duration */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">
+              {hasSelection
+                ? `Edit selected (${selectedNotes.length})`
+                : "Note length"}
+            </span>
+            <div className="flex gap-1.5">
+              {AVAILABLE_DURATIONS[phraseGrid].map((dur: NoteDuration) => (
+                <button
+                  key={dur}
+                  disabled={isPlaying}
+                  onClick={() => {
+                    if (hasSelection) {
+                      updateNotes(selectedNoteIds, dur);
+                      setSelectedNoteIds([]);
+                    } else {
+                      setSelectedDuration(dur);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
+                    activeDuration === dur
+                      ? hasSelection
+                        ? "bg-amber-500/80 text-stone-900 font-bold"
+                        : "bg-sky-600/80 text-white font-bold"
+                      : "bg-stone-800 text-stone-400 hover:bg-stone-700 disabled:opacity-40"
+                  }`}
+                >
+                  {DURATION_LABELS[dur]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {isEditing && (
+            <div className="self-end text-[11px] text-stone-500 font-mono pb-0.5">
+              Select slot → click fret to place
+            </div>
           )}
         </div>
-      </div>
+      )}
 
-      {/* Fretboard */}
-      <BluesFretboard
-        keyNote={key}
-        chordNotes={currentChord.notes}
-        fretStart={fretStart}
-        fretEnd={fretEnd}
-        stringStart={stringStart}
-        stringEnd={stringEnd}
-        chordTonesOnly={chordTonesOnly}
-        activeSoloNote={activeSoloNote}
-        onFretRangeChange={setFretRange}
-      />
+      {/* ── Timeline ── */}
+      {mode === "record" && (
+        <PhraseTimeline
+          keyNote={key}
+          sections={sections}
+          notes={notes}
+          phraseGrid={phraseGrid}
+          slotsPerBar={slotsPerBar}
+          slotsPerBeat={slotsPerBeat}
+          cursorSlot={cursorSlot}
+          playheadSlot={playheadSlot}
+          isPlaying={isPlaying}
+          selectedNoteIds={selectedNoteIds}
+          onSlotClick={setCursorSlot}
+          onNoteSelect={setSelectedNoteIds}
+          onNoteRemove={(id) => { removeNote(id); setSelectedNoteIds((prev) => prev.filter((x) => x !== id)); }}
+        />
+      )}
 
-      {/* Controls */}
-      <div className="flex flex-wrap gap-x-8 gap-y-4 items-start">
-
-        {/* Duration */}
-        <div className="flex flex-col gap-2">
-          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Duration</span>
-          <div className="flex gap-1.5">
-            {DURATION_OPTIONS.map((d) => (
-              <button
-                key={d.seconds}
-                disabled={isPlaying}
-                onClick={() => setDuration(d.seconds)}
-                className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
-                  durationSeconds === d.seconds
-                    ? "bg-stone-500 text-stone-100 font-bold"
-                    : "bg-stone-800 text-stone-400 hover:bg-stone-700 disabled:opacity-40"
-                }`}
-              >
-                {d.label}
-              </button>
-            ))}
-          </div>
+      {/* ── Legend ── */}
+      {mode === "record" && (
+        <div className="flex flex-wrap gap-x-5 gap-y-1 text-[10px] font-mono text-stone-500">
+          <span><span className="text-amber-500">●</span> Root</span>
+          <span><span className="text-sky-500">●</span> 3rd</span>
+          <span><span className="text-emerald-600">●</span> 5th</span>
+          {noteDisplay === "pentatonic" && <>
+            <span><span className="text-orange-500">●</span> b7</span>
+            <span><span className="text-fuchsia-600">●</span> Blue notes</span>
+            <span><span className="text-stone-500">●</span> Outside</span>
+          </>}
         </div>
+      )}
 
-        {/* Fret range readout */}
-        <div className="flex flex-col gap-2">
-          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Fret Range</span>
-          <span className="text-sm font-mono text-stone-300 tabular-nums">{fretStart} – {fretEnd}</span>
-        </div>
-
-        {/* String range */}
-        <div className="flex flex-col gap-2">
-          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Strings</span>
-          <div className="flex gap-1.5">
-            {ALL_STRINGS.map((s) => (
-              <button
-                key={s.label}
-                onClick={() => setStringRange(s.start, s.end)}
-                className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
-                  activeStringPreset?.label === s.label
-                    ? "bg-stone-500 text-stone-100 font-bold"
-                    : "bg-stone-800 text-stone-400 hover:bg-stone-700"
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Chord tones toggle */}
-        <div className="flex flex-col gap-2">
-          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Show Notes</span>
-          <div className="flex gap-1.5">
-            <button
-              onClick={() => setChordTonesOnly(false)}
-              className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
-                !chordTonesOnly
-                  ? "bg-stone-500 text-stone-100 font-bold"
-                  : "bg-stone-800 text-stone-400 hover:bg-stone-700"
-              }`}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setChordTonesOnly(true)}
-              className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
-                chordTonesOnly
-                  ? "bg-amber-400/80 text-stone-900 font-bold"
-                  : "bg-stone-800 text-stone-400 hover:bg-stone-700"
-              }`}
-            >
-              Chord tones
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Solo controls */}
-      <div className="flex flex-wrap gap-x-8 gap-y-4 items-start pt-1 border-t border-stone-800">
-
-        {/* Enable toggle */}
-        <div className="flex flex-col gap-2">
-          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Solo</span>
-          <button
-            onClick={() => setSoloEnabled(!soloEnabled)}
-            className={`px-4 py-1.5 rounded font-mono text-xs font-bold transition-all duration-150 ${
-              soloEnabled
-                ? "bg-sky-500/80 text-white"
-                : "bg-stone-800 text-stone-400 hover:bg-stone-700"
-            }`}
-          >
-            {soloEnabled ? "On" : "Off"}
-          </button>
-        </div>
-
-        {/* Rhythm */}
-        <div className={`flex flex-col gap-2 transition-opacity ${soloEnabled ? "opacity-100" : "opacity-30 pointer-events-none"}`}>
-          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Feel</span>
-          <div className="flex gap-1.5">
-            {(Object.keys(SOLO_RHYTHM_LABELS) as SoloRhythm[]).map((r) => (
-              <button
-                key={r}
-                onClick={() => setSoloRhythm(r)}
-                className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
-                  soloRhythm === r
-                    ? "bg-sky-500/70 text-white font-bold"
-                    : "bg-stone-800 text-stone-400 hover:bg-stone-700"
-                }`}
-              >
-                {SOLO_RHYTHM_LABELS[r]}
-              </button>
-            ))}
-          </div>
-        </div>
-
-      </div>
-
-      {/* Start / Stop */}
-      <div className="flex gap-3">
+      {/* ── Play / Stop / Clear ── */}
+      <div className="flex gap-2 items-center">
         {!isPlaying ? (
           <button
-            onClick={() => setIsPlaying(true)}
+            onClick={() => { setSelectedNoteIds([]); setIsPlaying(true); }}
             className="px-8 py-3 rounded bg-amber-400 text-stone-900 font-bold font-mono tracking-wide hover:bg-amber-300 transition-colors text-sm"
           >
-            ▶ Start Session
+            ▶ {mode === "jam" ? "Start Jam" : "Play Back"}
           </button>
         ) : (
           <button
-            onClick={() => stop()}
+            onClick={stop}
             className="px-8 py-3 rounded bg-stone-700 text-stone-200 font-bold font-mono tracking-wide hover:bg-stone-600 transition-colors text-sm"
           >
             ■ Stop
           </button>
         )}
-      </div>
-
-      {/* Legend */}
-      <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-[10px] font-mono text-stone-500">
-        <span><span className="text-amber-400">●</span> Root</span>
-        <span><span className="text-sky-400">●</span> 3rd</span>
-        <span><span className="text-emerald-400">●</span> 5th</span>
-        <span><span className="text-orange-400">●</span> b7</span>
-        {!chordTonesOnly && (
-          <>
-            <span><span className="text-fuchsia-400">●</span> Blue notes (b3, b5)</span>
-            <span><span className="text-amber-400/40">●</span> Maj pentatonic</span>
-            <span><span className="text-indigo-400/60">●</span> Min pentatonic</span>
-          </>
+        {mode === "record" && notes.length > 0 && !isPlaying && (
+          <button
+            onClick={clearNotes}
+            className="px-4 py-3 rounded bg-stone-800 text-stone-400 font-mono text-sm hover:bg-stone-700 hover:text-stone-200 transition-colors"
+          >
+            Clear
+          </button>
         )}
       </div>
 

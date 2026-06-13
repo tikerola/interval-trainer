@@ -14,6 +14,8 @@ interface BluesState {
   soloEnabled: boolean;
   soloRhythm: SoloRhythm;
   activeSoloNote: { stringIndex: number; fretNumber: number } | null;
+  // Secondary highlight: where a bend resolves to or where a slide is heading
+  activeSoloNoteSecondary: { stringIndex: number; fretNumber: number; type: "bend" | "slide" } | null;
 
   isPlaying: boolean;
   isCountIn: boolean;
@@ -31,6 +33,7 @@ interface BluesState {
   setSoloEnabled: (v: boolean) => void;
   setSoloRhythm: (r: SoloRhythm) => void;
   setActiveSoloNote: (note: { stringIndex: number; fretNumber: number } | null) => void;
+  setActiveSoloNoteSecondary: (note: { stringIndex: number; fretNumber: number; type: "bend" | "slide" } | null) => void;
   setIsPlaying: (v: boolean) => void;
   setIsCountIn: (v: boolean) => void;
   setCountInBeat: (beat: number) => void;
@@ -52,6 +55,7 @@ export const useBluesStore = create<BluesState>((set) => ({
   soloEnabled: false,
   soloRhythm: "shuffle" as SoloRhythm,
   activeSoloNote: null,
+  activeSoloNoteSecondary: null,
 
   isPlaying: false,
   isCountIn: false,
@@ -69,11 +73,12 @@ export const useBluesStore = create<BluesState>((set) => ({
   setSoloEnabled: (v) => set({ soloEnabled: v }),
   setSoloRhythm: (r) => set({ soloRhythm: r }),
   setActiveSoloNote: (note) => set({ activeSoloNote: note }),
+  setActiveSoloNoteSecondary: (note) => set({ activeSoloNoteSecondary: note }),
   setIsPlaying: (v) => set({ isPlaying: v }),
   setIsCountIn: (v) => set({ isCountIn: v }),
   setCountInBeat: (beat) => set({ countInBeat: beat }),
   setCurrentBar: (bar) => set({ currentBar: bar }),
   setCurrentBeat: (beat) => set({ currentBeat: beat }),
   setElapsedSeconds: (s) => set({ elapsedSeconds: s }),
-  stop: () => set({ isPlaying: false, isCountIn: false, countInBeat: 0, currentBar: 1, currentBeat: 1, elapsedSeconds: 0, activeSoloNote: null }),
+  stop: () => set({ isPlaying: false, isCountIn: false, countInBeat: 0, currentBar: 1, currentBeat: 1, elapsedSeconds: 0, activeSoloNote: null, activeSoloNoteSecondary: null }),
 }));
