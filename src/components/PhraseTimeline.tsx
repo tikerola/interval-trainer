@@ -4,7 +4,7 @@ import { useRef, useEffect } from "react";
 import { getBluesNoteRole, type BluesRole } from "@/lib/music/blues";
 import { getChordAtSlot, getSectionStartSlot, getTotalSlots } from "@/lib/music/phraseBuilder";
 import type { Note } from "@/lib/music/notes";
-import type { ChordSection, PhraseNote, PhraseGrid } from "@/store/phraseBuilderStore";
+import type { ChordSection, PendingSlot, PhraseNote, PhraseGrid } from "@/store/phraseBuilderStore";
 
 const ROLE_COLOR: Record<BluesRole, string> = {
   root:    "#d97706",
@@ -29,6 +29,8 @@ export default function PhraseTimeline({
   keyNote,
   sections,
   notes,
+  pendingSlots = [],
+  activePendingId = null,
   phraseGrid,
   slotsPerBar,
   slotsPerBeat,
@@ -43,6 +45,8 @@ export default function PhraseTimeline({
   keyNote: Note;
   sections: ChordSection[];
   notes: PhraseNote[];
+  pendingSlots?: PendingSlot[];
+  activePendingId?: string | null;
   phraseGrid: PhraseGrid;
   slotsPerBar: number;
   slotsPerBeat: number;
@@ -151,7 +155,9 @@ export default function PhraseTimeline({
                     );
                   }}
                 >
-                  <span className="truncate px-0.5 leading-none">{n.note}</span>
+                  <span className="truncate px-0.5 leading-none">
+                    {n.note}{n.bend ? `↑${n.bend === 1 ? "½" : "1"}` : ""}
+                  </span>
                   {isSelected && !isPlaying && (
                     <button
                       className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full bg-stone-900 border border-stone-600 flex items-center justify-center hover:bg-red-900/60 hover:border-red-500 transition-colors z-10"
@@ -160,6 +166,26 @@ export default function PhraseTimeline({
                       <span className="text-[8px] text-stone-300 leading-none">×</span>
                     </button>
                   )}
+                </div>
+              );
+            })}
+
+            {/* Pending slots (tap rhythm placeholders) */}
+            {pendingSlots.map((p) => {
+              const isActive = p.id === activePendingId;
+              return (
+                <div
+                  key={p.id}
+                  className="absolute top-1.5 bottom-1.5 rounded flex items-center justify-center text-[10px] font-bold font-mono pointer-events-none"
+                  style={{
+                    left:  `${(p.slot / totalSlots) * 100}%`,
+                    width: `${(p.durationSlots / totalSlots) * 100}%`,
+                    background: isActive ? "rgba(251,191,36,0.12)" : "rgba(120,113,108,0.15)",
+                    border: isActive ? "1.5px solid rgba(251,191,36,0.7)" : "1.5px dashed rgba(120,113,108,0.5)",
+                    color: isActive ? "#fbbf24" : "#78716c",
+                  }}
+                >
+                  {p.bend ? `↑${p.bend === 1 ? "½" : "1"}` : "?"}
                 </div>
               );
             })}

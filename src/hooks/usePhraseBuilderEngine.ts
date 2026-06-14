@@ -6,7 +6,7 @@ import { getChordAtSlot, getTotalSlots } from "@/lib/music/phraseBuilder";
 import { getChordVoicing } from "@/lib/music/blues";
 
 export function usePhraseBuilderEngine() {
-  const { isPlaying, setPlayheadSlot, setActivePhraseNote, stop } = usePhraseBuilderStore();
+  const { isPlaying, setPlayheadSlot, setActivePhraseNote, stop, setTapPreRollBar } = usePhraseBuilderStore();
 
   const synthsRef = useRef<{
     chord:       import("tone").PolySynth | null;
@@ -103,7 +103,7 @@ export function usePhraseBuilderEngine() {
 
     let cancelled = false;
     const state = usePhraseBuilderStore.getState();
-    const { key, bpm, mode, sections, notes, phraseGrid } = state;
+    const { key, bpm, mode, sections, notes, phraseGrid, recordPhase, cursorSlot } = state;
 
     const slotsPerBar  = SLOTS_PER_BAR[phraseGrid];
     const slotsPerBeat = SLOTS_PER_BEAT[phraseGrid];
@@ -112,6 +112,11 @@ export function usePhraseBuilderEngine() {
 
     if (totalSlots === 0) { stop(); return; }
 
+    const PRE_ROLL_BARS = recordPhase === "tapping" ? 1 : 0;
+    const preRollSlots  = PRE_ROLL_BARS * slotsPerBar;
+    // Phrase starts at cursorSlot when tapping so user can record into any part of the phrase
+    const startSlot = recordPhase === "tapping" ? cursorSlot : 0;
+
     import("tone").then((Tone) => {
       if (cancelled) return;
 
@@ -119,11 +124,15 @@ export function usePhraseBuilderEngine() {
       transport.cancel(0);
       transport.bpm.value = bpm;
 
-      let slotIndex = 0;
+      let absoluteSlot = 0;
 
       const id = transport.scheduleRepeat((time) => {
         const { chord: chordSynth, click: clickSynth, solo: soloSynth, soloSampler } = synthsRef.current;
-        const currentSlot = slotIndex % totalSlots;
+
+        const isPreRoll   = absoluteSlot < preRollSlots;
+        const currentSlot = isPreRoll
+          ? absoluteSlot  // 0…slotsPerBar-1, used for beat/bar detection
+          : (absoluteSlot - preRollSlots + startSlot) % totalSlots;
 
         // Click on every beat
         if (currentSlot % slotsPerBeat === 0) {
@@ -135,21 +144,48 @@ export function usePhraseBuilderEngine() {
           );
         }
 
-        // Chord strum at each bar start
+        // Chord strum at each bar start; pre-roll plays the chord at startSlot for context
         if (currentSlot % slotsPerBar === 0) {
-          const chord = getChordAtSlot(key, sections, currentSlot, phraseGrid);
+          const chord = getChordAtSlot(key, sections, isPreRoll ? startSlot : currentSlot, phraseGrid);
           const voicing = getChordVoicing(chord.root, chord.notes);
           voicing.forEach((n, i) => {
             chordSynth?.triggerAttackRelease(n, "2n", time + i * 0.018, 0.5);
           });
         }
 
-        // User notes (record mode only)
-        if (mode === "record") {
+        // Pre-roll countdown: update tapPreRollBar on each bar boundary
+        if (isPreRoll && absoluteSlot % slotsPerBar === 0) {
+          const barsRemaining = PRE_ROLL_BARS - Math.floor(absoluteSlot / slotsPerBar);
+          Tone.getDraw().schedule(() => {
+            if (cancelled) return;
+            setTapPreRollBar(barsRemaining);
+          }, time);
+        }
+        // Clear pre-roll flag on the first slot of the actual phrase
+        if (!isPreRoll && absoluteSlot === preRollSlots) {
+          Tone.getDraw().schedule(() => {
+            if (cancelled) return;
+            setTapPreRollBar(0);
+          }, time);
+        }
+
+        // User notes — only during actual phrase playback, not pre-roll
+        if (mode === "record" && !isPreRoll) {
+          const OPEN_MIDI = [40, 45, 50, 55, 59, 64];
+          const midiToHz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
           for (const n of notes) {
             if (n.slot === currentSlot) {
-              const player = samplerLoadedRef.current && soloSampler ? soloSampler : soloSynth;
-              player?.triggerAttackRelease(`${n.note}${n.octave}`, n.duration, time, 0.75);
+              if (n.bend && n.bend > 0 && soloSynth) {
+                const startHz = midiToHz(OPEN_MIDI[n.stringIndex] + n.fretNumber);
+                const endHz   = startHz * Math.pow(2, n.bend / 12);
+                const durSec  = Tone.Time(n.duration).toSeconds();
+                soloSynth.triggerAttack(`${n.note}${n.octave}`, time, 0.75);
+                soloSynth.frequency.linearRampToValueAtTime(endHz, time + durSec * 0.65);
+                soloSynth.triggerRelease(time + durSec);
+              } else {
+                const player = samplerLoadedRef.current && soloSampler ? soloSampler : soloSynth;
+                player?.triggerAttackRelease(`${n.note}${n.octave}`, n.duration, time, 0.75);
+              }
 
               Tone.getDraw().schedule(() => {
                 if (cancelled) return;
@@ -165,13 +201,16 @@ export function usePhraseBuilderEngine() {
           }
         }
 
-        const capturedSlot = currentSlot;
-        Tone.getDraw().schedule(() => {
-          if (cancelled) return;
-          setPlayheadSlot(capturedSlot);
-        }, time);
+        // Playhead only advances during the actual phrase
+        if (!isPreRoll) {
+          const capturedSlot = currentSlot;
+          Tone.getDraw().schedule(() => {
+            if (cancelled) return;
+            setPlayheadSlot(capturedSlot);
+          }, time);
+        }
 
-        slotIndex++;
+        absoluteSlot++;
       }, tickDuration);
 
       Tone.start().then(() => {

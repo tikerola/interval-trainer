@@ -4,6 +4,25 @@ import type { Note } from "@/lib/music/notes";
 export type BluesDegree = 1 | 4 | 5;
 export type AppMode = "jam" | "record";
 export type PhraseGrid = "straight" | "triplet";
+export type RecordPhase = "idle" | "tapping" | "pitching";
+
+export interface PendingSlot {
+  id: string;
+  slot: number;
+  durationSlots: number;
+  duration: NoteDuration;
+  bend?: number; // semitones: 1 = half step, 2 = full step
+}
+
+export function snapToNearestDuration(rawSlots: number, grid: PhraseGrid): { duration: NoteDuration; slots: number } {
+  const options = AVAILABLE_DURATIONS[grid].map((d) => ({
+    duration: d,
+    slots: DURATION_SLOTS[grid][d] ?? 1,
+  }));
+  return options.reduce((best, cur) =>
+    Math.abs(cur.slots - rawSlots) < Math.abs(best.slots - rawSlots) ? cur : best,
+  );
+}
 export type NoteDuration = "2n" | "4n" | "8n" | "16n" | "8t" | "16t";
 
 // Slots per bar for each grid mode
@@ -52,6 +71,7 @@ export interface PhraseNote {
   octave: number;
   duration: NoteDuration;
   durationSlots: number;
+  bend?: number; // semitones: 1 = half step, 2 = full step
 }
 
 function uid(): string {
@@ -74,10 +94,20 @@ interface PhraseBuilderState {
   playheadSlot: number;
   activePhraseNote: { stringIndex: number; fretNumber: number } | null;
 
+  recordPhase: RecordPhase;
+  pendingSlots: PendingSlot[];
+  tapPreRollBar: number;
+
   setKey: (key: Note) => void;
   setBpm: (bpm: number) => void;
   setMode: (m: AppMode) => void;
   setGrid: (grid: PhraseGrid) => void;
+  setRecordPhase: (phase: RecordPhase) => void;
+  setTapPreRollBar: (n: number) => void;
+  addPendingSlot: (slot: number, durationSlots: number, duration: NoteDuration, bend?: number) => void;
+  removePendingSlot: (id: string) => void;
+  clearPendingSlots: () => void;
+  promotePendingSlot: (id: string, fretNumber: number, stringIndex: number, note: string, octave: number) => void;
   addSection: () => void;
   removeSection: (id: string) => void;
   updateSection: (id: string, patch: Partial<Pick<ChordSection, "degree" | "bars">>) => void;
@@ -100,13 +130,16 @@ export const usePhraseBuilderStore = create<PhraseBuilderState>((set) => ({
   key: "A" as Note,
   bpm: 80,
   mode: "record" as AppMode,
-  phraseGrid: "straight" as PhraseGrid,
+  recordPhase: "idle" as RecordPhase,
+  pendingSlots: [] as PendingSlot[],
+  tapPreRollBar: 0,
+  phraseGrid: "triplet" as PhraseGrid,
   sections: [
     { id: uid(), degree: 1 as BluesDegree, bars: 2 },
     { id: uid(), degree: 4 as BluesDegree, bars: 1 },
   ],
   notes: [],
-  selectedDuration: "8n" as NoteDuration,
+  selectedDuration: "8t" as NoteDuration,
   cursorSlot: 0,
   fretStart: 0,
   fretEnd: 12,
@@ -117,19 +150,84 @@ export const usePhraseBuilderStore = create<PhraseBuilderState>((set) => ({
   setKey: (key) => set({ key }),
   setBpm: (bpm) => set({ bpm }),
   setMode: (mode) => set({ mode }),
+  setRecordPhase: (recordPhase) => set({ recordPhase }),
+  setTapPreRollBar: (tapPreRollBar) => set({ tapPreRollBar }),
+
+  addPendingSlot: (slot, durationSlots, duration, bend) => set((s) => {
+    const spb = SLOTS_PER_BAR[s.phraseGrid];
+    const totalSlots = s.sections.reduce((sum, sec) => sum + sec.bars * spb, 0);
+    if (totalSlots === 0) return s;
+    const normalizedSlot = ((slot % totalSlots) + totalSlots) % totalSlots;
+    const cappedSlots = Math.min(durationSlots, totalSlots - normalizedSlot);
+    const filtered = s.pendingSlots.filter(
+      (p) => !(p.slot < normalizedSlot + cappedSlots && p.slot + p.durationSlots > normalizedSlot),
+    );
+    return {
+      pendingSlots: [
+        ...filtered,
+        { id: uid(), slot: normalizedSlot, durationSlots: cappedSlots, duration, bend },
+      ].sort((a, b) => a.slot - b.slot),
+    };
+  }),
+
+  removePendingSlot: (id) => set((s) => ({ pendingSlots: s.pendingSlots.filter((p) => p.id !== id) })),
+  clearPendingSlots: () => set({ pendingSlots: [] }),
+
+  promotePendingSlot: (id, fretNumber, stringIndex, note, octave) => set((s) => {
+    const pending = s.pendingSlots.find((p) => p.id === id);
+    if (!pending) return s;
+    const spb = SLOTS_PER_BAR[s.phraseGrid];
+    const totalSlots = s.sections.reduce((sum, sec) => sum + sec.bars * spb, 0);
+    const newEnd = pending.slot + pending.durationSlots;
+    const existingFiltered = s.notes.filter(
+      (n) => !(n.slot < newEnd && n.slot + n.durationSlots > pending.slot),
+    );
+    const newNote: PhraseNote = {
+      id: uid(),
+      slot: pending.slot,
+      fretNumber, stringIndex, note, octave,
+      duration: pending.duration,
+      durationSlots: pending.durationSlots,
+      bend: pending.bend,
+    };
+    void totalSlots;
+    return {
+      pendingSlots: s.pendingSlots.filter((p) => p.id !== id),
+      notes: [...existingFiltered, newNote].sort((a, b) => a.slot - b.slot),
+    };
+  }),
 
   setGrid: (phraseGrid) => set((s) => {
+    if (s.phraseGrid === phraseGrid) return s;
+
+    const DURATION_CONVERT: Record<PhraseGrid, Partial<Record<NoteDuration, NoteDuration>>> = {
+      triplet:  { "16n": "16t", "8n": "8t", "4n": "4n", "2n": "2n" },
+      straight: { "16t": "16n", "8t": "8n", "4n": "4n", "2n": "2n" },
+    };
+    const ratio = SLOTS_PER_BAR[phraseGrid] / SLOTS_PER_BAR[s.phraseGrid];
+    const convertMap = DURATION_CONVERT[phraseGrid];
+
     const spb = SLOTS_PER_BAR[phraseGrid];
     const totalSlots = s.sections.reduce((sum, sec) => sum + sec.bars * spb, 0);
-    const notes = s.notes.filter((n) => n.slot < totalSlots);
+
+    const notes = s.notes
+      .map((n) => {
+        const newSlot = Math.round(n.slot * ratio);
+        const newDuration = (convertMap[n.duration] ?? n.duration) as NoteDuration;
+        const newDurationSlots = DURATION_SLOTS[phraseGrid][newDuration] ?? 1;
+        return { ...n, slot: newSlot, duration: newDuration, durationSlots: newDurationSlots };
+      })
+      .filter((n) => n.slot >= 0 && n.slot + n.durationSlots <= totalSlots);
+
     const available = AVAILABLE_DURATIONS[phraseGrid];
     const selectedDuration: NoteDuration = available.includes(s.selectedDuration)
       ? s.selectedDuration
       : phraseGrid === "straight" ? "8n" : "8t";
+
     return {
       phraseGrid,
       notes,
-      cursorSlot: Math.min(s.cursorSlot, Math.max(0, totalSlots - 1)),
+      cursorSlot: Math.min(Math.round(s.cursorSlot * ratio), Math.max(0, totalSlots - 1)),
       selectedDuration,
     };
   }),
@@ -249,5 +347,5 @@ export const usePhraseBuilderStore = create<PhraseBuilderState>((set) => ({
   setIsPlaying: (v) => set({ isPlaying: v }),
   setPlayheadSlot: (slot) => set({ playheadSlot: slot }),
   setActivePhraseNote: (n) => set({ activePhraseNote: n }),
-  stop: () => set({ isPlaying: false, playheadSlot: 0, activePhraseNote: null }),
+  stop: () => set({ isPlaying: false, playheadSlot: 0, activePhraseNote: null, tapPreRollBar: 0 }),
 }));

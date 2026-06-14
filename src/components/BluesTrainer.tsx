@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState, useEffect, useRef } from "react";
 import { NOTES, getNoteAtPosition } from "@/lib/music/notes";
 import {
   usePhraseBuilderStore, DURATION_LABELS, AVAILABLE_DURATIONS,
   SLOTS_PER_BAR, SLOTS_PER_BEAT,
+  snapToNearestDuration,
   type BluesDegree, type NoteDuration, type PhraseGrid,
 } from "@/store/phraseBuilderStore";
 import { usePhraseBuilderEngine } from "@/hooks/usePhraseBuilderEngine";
@@ -101,19 +102,100 @@ function ChordProgressionBar({
   );
 }
 
+function bendFromDelta(px: number): number {
+  return px >= 65 ? 2 : px >= 25 ? 1 : 0;
+}
+function bendLabel(bend: number): string {
+  return bend === 2 ? "1" : bend === 1 ? "½" : "";
+}
+
+function TapPad({ bpm, phraseGrid, playheadSlot, totalSlots, onTap }: {
+  bpm: number;
+  phraseGrid: PhraseGrid;
+  playheadSlot: number;
+  totalSlots: number;
+  onTap: (slot: number, durationSlots: number, duration: NoteDuration, bend: number) => void;
+}) {
+  const tapRef = useRef<{ startTime: number; startSlot: number; startY: number } | null>(null);
+  const [isHeld, setIsHeld] = useState(false);
+  const [dragUp, setDragUp] = useState(0);
+  const playheadRef = useRef(playheadSlot);
+  useEffect(() => { playheadRef.current = playheadSlot; }, [playheadSlot]);
+
+  const press = useCallback((clientY: number) => {
+    tapRef.current = { startTime: Date.now(), startSlot: playheadRef.current, startY: clientY };
+    setIsHeld(true);
+    setDragUp(0);
+  }, []);
+
+  const move = useCallback((clientY: number) => {
+    if (!tapRef.current) return;
+    setDragUp(Math.max(0, tapRef.current.startY - clientY));
+  }, []);
+
+  const release = useCallback((clientY: number) => {
+    if (!tapRef.current) return;
+    const { startTime, startSlot, startY } = tapRef.current;
+    tapRef.current = null;
+    setIsHeld(false);
+    setDragUp(0);
+    const bend = bendFromDelta(Math.max(0, startY - clientY));
+    const msPerSlot = (60000 / bpm) / SLOTS_PER_BEAT[phraseGrid];
+    const rawSlots = (Date.now() - startTime) / msPerSlot;
+    const capped = Math.max(1, Math.min(rawSlots, totalSlots - (startSlot % totalSlots)));
+    const { duration, slots } = snapToNearestDuration(capped, phraseGrid);
+    onTap(startSlot % totalSlots, slots, duration, bend);
+  }, [bpm, phraseGrid, totalSlots, onTap]);
+
+  const currentBend = bendFromDelta(dragUp);
+
+  return (
+    <div
+      className={`w-full rounded-xl flex flex-col items-center justify-center gap-1 select-none cursor-ns-resize transition-all duration-75 relative ${
+        isHeld
+          ? "bg-amber-400/20 border-2 border-amber-400 shadow-lg shadow-amber-400/15 scale-[0.985]"
+          : "bg-stone-800/60 border-2 border-stone-600/40 hover:border-stone-500 hover:bg-stone-800/80"
+      }`}
+      style={{ height: "88px" }}
+      onMouseDown={(e) => press(e.clientY)}
+      onMouseMove={(e) => move(e.clientY)}
+      onMouseUp={(e) => release(e.clientY)}
+      onMouseLeave={(e) => release(e.clientY)}
+      onTouchStart={(e) => { e.preventDefault(); press(e.touches[0].clientY); }}
+      onTouchMove={(e) => { e.preventDefault(); move(e.touches[0].clientY); }}
+      onTouchEnd={(e) => { e.preventDefault(); release(e.changedTouches[0].clientY); }}
+    >
+      {currentBend > 0 && (
+        <span className="absolute top-2 right-3 font-mono text-xs font-bold text-amber-300">
+          ↑{bendLabel(currentBend)}
+        </span>
+      )}
+      <span className={`font-mono text-2xl transition-colors leading-none ${isHeld ? "text-amber-300" : "text-stone-500"}`}>
+        {isHeld ? "●" : "○"}
+      </span>
+      <span className={`font-mono text-xs uppercase tracking-widest transition-colors ${isHeld ? "text-amber-400" : "text-stone-500"}`}>
+        {isHeld
+          ? currentBend > 0 ? `bend ${bendLabel(currentBend)} step` : "recording…"
+          : "hold to tap · drag up to bend"}
+      </span>
+    </div>
+  );
+}
+
 export default function BluesTrainer() {
   const { previewNote } = usePhraseBuilderEngine();
   const [noteDisplay, setNoteDisplay] = useState<"triad" | "pentatonic">("triad");
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
 
   const {
-    key, mode, phraseGrid, sections, notes, selectedDuration,
+    key, bpm, mode, phraseGrid, sections, notes, selectedDuration,
     cursorSlot, fretStart, fretEnd, isPlaying, playheadSlot,
-    activePhraseNote,
+    activePhraseNote, recordPhase, pendingSlots, tapPreRollBar,
     setKey, setMode, setGrid, addSection, removeSection, updateSection, setSections,
     setSelectedDuration, setCursorSlot, setFretRange,
     placeNote, removeNote, updateNote, updateNotes, clearNotes,
     setIsPlaying, stop,
+    setRecordPhase, addPendingSlot, clearPendingSlots, promotePendingSlot, setTapPreRollBar,
   } = usePhraseBuilderStore();
 
   const slotsPerBar  = SLOTS_PER_BAR[phraseGrid];
@@ -124,7 +206,7 @@ export default function BluesTrainer() {
     [key, sections, isPlaying, playheadSlot, cursorSlot, phraseGrid],
   );
 
-  const isEditing = mode === "record" && !isPlaying;
+  const isEditing = mode === "record" && !isPlaying && recordPhase !== "tapping";
 
   const selectedNotes = notes.filter((n) => selectedNoteIds.includes(n.id));
   const hasSelection = selectedNotes.length > 0;
@@ -152,11 +234,43 @@ export default function BluesTrainer() {
     : null;
   const displayGrid = selectedNoteGrid ?? phraseGrid;
 
+  const totalSlots = useMemo(
+    () => sections.reduce((sum, sec) => sum + sec.bars * SLOTS_PER_BAR[phraseGrid], 0),
+    [sections, phraseGrid],
+  );
+
+  // Exit pitching phase automatically when all pending slots are assigned
+  useEffect(() => {
+    if (recordPhase === "pitching" && pendingSlots.length === 0) {
+      setRecordPhase("idle");
+    }
+  }, [recordPhase, pendingSlots.length, setRecordPhase]);
+
+  const enterTapPhase = useCallback(() => {
+    clearPendingSlots();
+    setRecordPhase("tapping");
+    setTapPreRollBar(1);
+    setIsPlaying(true);
+  }, [clearPendingSlots, setRecordPhase, setTapPreRollBar, setIsPlaying]);
+
+  const finishTapping = useCallback(() => {
+    stop();
+    setRecordPhase(pendingSlots.length > 0 ? "pitching" : "idle");
+    if (pendingSlots.length > 0) setCursorSlot(pendingSlots[0].slot);
+  }, [stop, setRecordPhase, pendingSlots, setCursorSlot]);
+
   const handleFretClick = useCallback((stringIndex: number, fretNumber: number) => {
     const { note, octave } = getNoteAtPosition(stringIndex, fretNumber);
+    if (recordPhase === "pitching" && pendingSlots.length > 0) {
+      const target = pendingSlots[0];
+      promotePendingSlot(target.id, fretNumber, stringIndex, note, octave);
+      previewNote(note, octave, target.duration);
+      if (pendingSlots.length > 1) setCursorSlot(pendingSlots[1].slot);
+      return;
+    }
     placeNote(fretNumber, stringIndex, note, octave);
     previewNote(note, octave, selectedDuration);
-  }, [placeNote, previewNote, selectedDuration]);
+  }, [recordPhase, pendingSlots, promotePendingSlot, placeNote, previewNote, selectedDuration, setCursorSlot]);
 
   return (
     <div className="w-full max-w-5xl flex flex-col gap-5">
@@ -316,83 +430,172 @@ export default function BluesTrainer() {
         activeSoloNoteSecondary={null}
         onFretRangeChange={setFretRange}
         isRecording={isEditing}
-        onFretClick={isEditing ? handleFretClick : undefined}
+        onFretClick={(isEditing || recordPhase === "pitching") ? handleFretClick : undefined}
       />
 
-      {/* ── Record controls: grid + note duration ── */}
+      {/* ── Record controls ── */}
       {mode === "record" && (
-        <div className="flex flex-wrap gap-x-8 gap-y-3 items-start pt-1 border-t border-stone-800">
+        <div className="pt-1 border-t border-stone-800">
 
-          {/* Grid / feel */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">
-              {hasSelection ? "Feel" : "Grid"}
-            </span>
-            <div className="flex gap-1">
-              {(["straight", "triplet"] as PhraseGrid[]).map((g) => {
-                const isActive = displayGrid === g;
-                const isNoteGrid = hasSelection && selectedNoteGrid === g;
-                return (
-                  <button
-                    key={g}
-                    disabled={isPlaying}
-                    onClick={() => !hasSelection && setGrid(g)}
-                    className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
-                      isActive
-                        ? isNoteGrid
-                          ? "bg-amber-500/80 text-stone-900 font-bold"
-                          : hasSelection
-                            ? "bg-stone-500 text-stone-200 font-bold"
-                            : "bg-stone-600 text-stone-100 font-bold"
-                        : "bg-stone-800 text-stone-400 hover:bg-stone-700 disabled:opacity-40"
-                    } ${hasSelection ? "cursor-default" : ""}`}
-                  >
-                    {g === "straight" ? "Straight" : "Triplet"}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Note duration */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">
-              {hasSelection
-                ? `Edit selected (${selectedNotes.length})`
-                : "Note length"}
-            </span>
-            <div className="flex gap-1.5">
-              {AVAILABLE_DURATIONS[phraseGrid].map((dur: NoteDuration) => (
-                <button
-                  key={dur}
-                  disabled={isPlaying}
-                  onClick={() => {
-                    if (hasSelection) {
-                      updateNotes(selectedNoteIds, dur);
-                      setSelectedNoteIds([]);
-                    } else {
-                      setSelectedDuration(dur);
-                    }
-                  }}
-                  className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
-                    activeDuration === dur
-                      ? hasSelection
-                        ? "bg-amber-500/80 text-stone-900 font-bold"
-                        : "bg-sky-600/80 text-white font-bold"
-                      : "bg-stone-800 text-stone-400 hover:bg-stone-700 disabled:opacity-40"
-                  }`}
+          {/* ── Tapping phase ── */}
+          {recordPhase === "tapping" && (
+            <div className="flex flex-col gap-3">
+              {tapPreRollBar > 0 ? (
+                <div
+                  className="w-full rounded-xl flex flex-col items-center justify-center gap-1 bg-stone-800/60 border-2 border-stone-700/40"
+                  style={{ height: "88px" }}
                 >
-                  {DURATION_LABELS[dur]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {isEditing && (
-            <div className="self-end text-[11px] text-stone-500 font-mono pb-0.5">
-              Select slot → click fret to place
+                  <span className="font-mono text-xs uppercase tracking-widest text-stone-500">Get ready…</span>
+                  <span className="font-mono text-4xl font-black text-amber-300 leading-none tabular-nums">
+                    {tapPreRollBar}
+                  </span>
+                  <span className="font-mono text-xs text-stone-500">
+                    {tapPreRollBar === 1 ? "bar" : "bars"}
+                  </span>
+                </div>
+              ) : (
+                <TapPad
+                  bpm={bpm}
+                  phraseGrid={phraseGrid}
+                  playheadSlot={playheadSlot}
+                  totalSlots={totalSlots}
+                  onTap={(slot, durationSlots, duration, bend) => addPendingSlot(slot, durationSlots, duration, bend)}
+                />
+              )}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-stone-500">
+                  {pendingSlots.length === 0 ? "Tap notes above to record rhythm" : `${pendingSlots.length} note${pendingSlots.length !== 1 ? "s" : ""} tapped`}
+                </span>
+                <div className="ml-auto flex gap-2">
+                  {pendingSlots.length > 0 && (
+                    <button
+                      onClick={clearPendingSlots}
+                      className="px-3 py-1.5 rounded bg-stone-800 text-stone-400 font-mono text-xs hover:bg-stone-700 hover:text-stone-200 transition-colors"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <button
+                    onClick={finishTapping}
+                    disabled={pendingSlots.length === 0}
+                    className="px-4 py-1.5 rounded bg-amber-500/80 text-stone-900 font-bold font-mono text-xs hover:bg-amber-400 transition-colors disabled:opacity-30"
+                  >
+                    Assign Pitches →
+                  </button>
+                </div>
+              </div>
             </div>
           )}
+
+          {/* ── Pitching phase ── */}
+          {recordPhase === "pitching" && (
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Assign pitch</span>
+                <span className="font-mono text-sm text-amber-300">
+                  {pendingSlots.length} remaining — click a fret
+                </span>
+              </div>
+              <button
+                onClick={() => { stop(); enterTapPhase(); }}
+                className="ml-auto px-3 py-1.5 rounded bg-stone-800 text-stone-400 font-mono text-xs hover:bg-stone-700 hover:text-stone-200 transition-colors"
+              >
+                ← Re-tap
+              </button>
+            </div>
+          )}
+
+          {/* ── Idle / normal step-entry ── */}
+          {recordPhase === "idle" && (
+            <div className="flex flex-wrap gap-x-8 gap-y-3 items-start">
+
+              {/* Grid / feel */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">
+                  {hasSelection ? "Feel" : "Grid"}
+                </span>
+                <div className="flex gap-1">
+                  {(["straight", "triplet"] as PhraseGrid[]).map((g) => {
+                    const isActive = displayGrid === g;
+                    const isNoteGrid = hasSelection && selectedNoteGrid === g;
+                    return (
+                      <button
+                        key={g}
+                        disabled={isPlaying}
+                        onClick={() => setGrid(g)}
+                        className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
+                          isActive
+                            ? isNoteGrid
+                              ? "bg-amber-500/80 text-stone-900 font-bold"
+                              : hasSelection
+                                ? "bg-stone-500 text-stone-200 font-bold"
+                                : "bg-stone-600 text-stone-100 font-bold"
+                            : "bg-stone-800 text-stone-400 hover:bg-stone-700 disabled:opacity-40"
+                        }`}
+                      >
+                        {g === "straight" ? "Straight" : "Triplet"}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Note duration */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">
+                  {hasSelection ? `Edit selected (${selectedNotes.length})` : "Note length"}
+                </span>
+                <div className="flex gap-1.5">
+                  {AVAILABLE_DURATIONS[phraseGrid].map((dur: NoteDuration) => (
+                    <button
+                      key={dur}
+                      disabled={isPlaying}
+                      onClick={() => {
+                        if (hasSelection) {
+                          updateNotes(selectedNoteIds, dur);
+                          setSelectedNoteIds([]);
+                        } else {
+                          setSelectedDuration(dur);
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
+                        activeDuration === dur
+                          ? hasSelection
+                            ? "bg-amber-500/80 text-stone-900 font-bold"
+                            : "bg-sky-600/80 text-white font-bold"
+                          : "bg-stone-800 text-stone-400 hover:bg-stone-700 disabled:opacity-40"
+                      }`}
+                    >
+                      {DURATION_LABELS[dur]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tap rhythm entry */}
+              <div className="flex flex-col gap-1.5 ml-auto">
+                <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Tap rhythm</span>
+                <button
+                  disabled={isPlaying}
+                  onClick={enterTapPhase}
+                  className="px-4 py-1.5 rounded bg-stone-700/60 border border-stone-600/50 text-amber-400/80 hover:text-amber-300 hover:bg-stone-700 font-mono text-xs transition-colors disabled:opacity-30"
+                  title="Click a slot in the timeline first to set the start position"
+                >
+                  ● Tap
+                </button>
+                <span className="text-[10px] font-mono text-stone-600 text-right">
+                  click timeline to set start
+                </span>
+              </div>
+
+              {isEditing && (
+                <div className="self-end text-[11px] text-stone-500 font-mono pb-0.5 w-full">
+                  Select slot → click fret to place
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
       )}
 
@@ -402,6 +605,8 @@ export default function BluesTrainer() {
           keyNote={key}
           sections={sections}
           notes={notes}
+          pendingSlots={pendingSlots}
+          activePendingId={recordPhase === "pitching" ? (pendingSlots[0]?.id ?? null) : null}
           phraseGrid={phraseGrid}
           slotsPerBar={slotsPerBar}
           slotsPerBeat={slotsPerBeat}

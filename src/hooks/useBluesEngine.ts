@@ -189,6 +189,9 @@ export function useBluesEngine() {
           "16n", time,
           beat === 1 ? 0.9 : 0.35
         );
+        if (soloRef.current.rhythm === "shuffle") {
+          clickSynth?.triggerAttackRelease("C3", "16n", time + secondsPerBeat * (2 / 3), 0.18);
+        }
 
         // ── Chord strum on beat 1 ─────────────────────────────────
         if (beat === 1) {
