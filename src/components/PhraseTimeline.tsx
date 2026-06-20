@@ -62,15 +62,16 @@ export default function PhraseTimeline({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!isPlaying || !scrollRef.current) return;
+    if (!scrollRef.current || totalSlots === 0) return;
     const el = scrollRef.current;
+    const targetSlot = isPlaying ? playheadSlot : cursorSlot;
     const slotPx = el.scrollWidth / totalSlots;
-    const x = playheadSlot * slotPx;
+    const x = targetSlot * slotPx;
     const margin = el.clientWidth * 0.25;
     if (x < el.scrollLeft + margin || x > el.scrollLeft + el.clientWidth - margin) {
       el.scrollLeft = Math.max(0, x - el.clientWidth * 0.3);
     }
-  }, [playheadSlot, isPlaying, totalSlots]);
+  }, [playheadSlot, cursorSlot, isPlaying, totalSlots]);
 
   if (totalSlots === 0) return null;
 
