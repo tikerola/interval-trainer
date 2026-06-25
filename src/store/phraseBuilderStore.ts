@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Note } from "@/lib/music/notes";
 
 export type BluesDegree = 1 | 4 | 5;
-export type AppMode = "jam" | "record";
+export type AppMode = "jam" | "record" | "solo";
 export type PhraseGrid = "straight" | "triplet";
 export type RecordPhase = "idle" | "tapping" | "pitching";
 

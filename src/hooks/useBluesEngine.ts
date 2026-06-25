@@ -3,12 +3,26 @@
 import { useEffect, useRef } from "react";
 import { useBluesStore } from "@/store/bluesStore";
 import { getChordForBar, getChordVoicing } from "@/lib/music/blues";
-import { generateBarPhrase, type SoloRhythm } from "@/lib/music/soloGenerator";
+import { toneDurationToBeats } from "@/lib/music/duration";
+import type { SoloNote } from "@/lib/music/soloNote";
+import type { TranscribedSolo } from "@/lib/music/solos";
+
+type PlayRange = { bar: number; loop: boolean } | null;
+
+// A note is reached legato (hammer-on/pull-off, or the landing note of a slide) when
+// it's on the same string as the previous note with essentially no gap between them —
+// the same adjacency test the tab view uses to decide where to draw "h"/"p"/"/". Those
+// notes weren't freshly picked, so they should sound quieter than a normal attack.
+function isLegatoFrom(prev: SoloNote, n: SoloNote): boolean {
+  if (prev.stringIndex !== n.stringIndex) return false;
+  const prevEnd = prev.beatOffset + toneDurationToBeats(prev.duration);
+  return prev.slideToNext === true || Math.abs(prevEnd - n.beatOffset) < 0.05;
+}
 
 export function useBluesEngine() {
   const {
-    key, bpm, durationSeconds, isPlaying,
-    setCurrentBar, setCurrentBeat, setElapsedSeconds,
+    bpm, isPlaying,
+    setCurrentBar, setCurrentBeat,
     setIsCountIn, setCountInBeat, setActiveSoloNote, setActiveSoloNoteSecondary, stop,
   } = useBluesStore();
 
@@ -30,29 +44,20 @@ export function useBluesEngine() {
   // handler to skip phrase generation so the ongoing phrase isn't interrupted.
   const skipNextBarRef = useRef(false);
 
-  // Ref mirror of solo-related settings so the transport callback always reads current values
-  const soloRef = useRef({
-    enabled:   false,
-    rhythm:    "shuffle" as SoloRhythm,
-    fretStart: 0,
-    fretEnd:   4,
-    strStart:  0,
-    strEnd:    5,
-    key:       "A" as import("@/lib/music/notes").Note,
-  });
+  // Ref mirrors of store data the transport callback reads every tick, so switching
+  // solos or which bar to play doesn't require tearing down and rebuilding the
+  // transport schedule. That matters: the click/solo synths are long-lived across
+  // restarts, and Tone.js requires strictly increasing schedule times per synth —
+  // rapidly cancelling and rescheduling (e.g. clicking through several bars' loop
+  // buttons in a row) could otherwise race against still-in-flight lookahead audio
+  // events and throw "start time must be strictly greater than previous start time".
+  const soloRef = useRef<TranscribedSolo>(useBluesStore.getState().solo);
+  const playRangeRef = useRef<PlayRange>(useBluesStore.getState().playRange);
 
-  // Keep soloRef in sync without restarting the transport
   useEffect(() => {
     const unsub = useBluesStore.subscribe((s) => {
-      soloRef.current = {
-        enabled:   s.soloEnabled,
-        rhythm:    s.soloRhythm,
-        fretStart: s.fretStart,
-        fretEnd:   s.fretEnd,
-        strStart:  s.stringStart,
-        strEnd:    s.stringEnd,
-        key:       s.key,
-      };
+      soloRef.current = s.solo;
+      playRangeRef.current = s.playRange;
     });
     return unsub;
   }, []);
@@ -137,7 +142,9 @@ export function useBluesEngine() {
     };
   }, []);
 
-  // Start / stop transport
+  // Start / stop transport. Only runs on a genuine stop<->play transition — switching
+  // which bar plays (or solo<->full) while already playing is handled live below via
+  // playRangeRef, without tearing this down.
   useEffect(() => {
     if (!isPlaying) return;
 
@@ -150,178 +157,190 @@ export function useBluesEngine() {
       transport.cancel(0);
       transport.bpm.value = bpm;
 
-      const beatsPerSecond = bpm / 60;
       const secondsPerBeat = 60 / bpm;
-      const totalBeats = Math.ceil(durationSeconds * beatsPerSecond);
 
-      let beatIndex = -4; // -4..-1 = count-in
+      let beatIndex = playRangeRef.current ? 0 : -4; // -4..-1 = count-in; bars from the tab jump in immediately
+      let activeRangeKey = rangeKey(playRangeRef.current);
       skipNextBarRef.current = false;
 
       const id = transport.scheduleRepeat((time) => {
-        const { chord: chordSynth, click: clickSynth, solo: soloSynth, soloSampler } = synthsRef.current;
+        try {
+          const { chord: chordSynth, click: clickSynth, solo: soloSynth, soloSampler } = synthsRef.current;
+          const range = playRangeRef.current;
 
-        // ── Count-in ──────────────────────────────────────────────
-        if (beatIndex < 0) {
-          const countInBeat = beatIndex + 5;
-          clickSynth?.triggerAttackRelease("C2", "16n", time, 0.9);
-          Tone.getDraw().schedule(() => {
-            if (cancelled) return;
-            setIsCountIn(true);
-            setCountInBeat(countInBeat);
-          }, time);
-          beatIndex++;
-          return;
-        }
+          // The user switched which bar to play (or between a bar and the full solo) —
+          // restart cleanly rather than carrying over a stale beat position.
+          const key = rangeKey(range);
+          if (key !== activeRangeKey) {
+            activeRangeKey = key;
+            beatIndex = range ? 0 : -4;
+            skipNextBarRef.current = false;
+          }
 
-        if (beatIndex >= totalBeats) {
-          Tone.getDraw().schedule(() => { stop(); }, time);
-          transport.stop(time);
-          return;
-        }
+          const fullBarCount = soloRef.current.chordProgression.length;
+          const barCount = range ? 1 : fullBarCount;
+          const rangeStartBar = range?.bar ?? 1;
 
-        const beat    = (beatIndex % 4) + 1;
-        const bar     = (Math.floor(beatIndex / 4) % 12) + 1;
-        const elapsed = Math.floor(beatIndex / beatsPerSecond);
+          // ── Count-in ──────────────────────────────────────────────
+          if (beatIndex < 0) {
+            const countInBeat = beatIndex + 5;
+            clickSynth?.triggerAttackRelease("C2", "16n", time, 0.9);
+            Tone.getDraw().schedule(() => {
+              if (cancelled) return;
+              setIsCountIn(true);
+              setCountInBeat(countInBeat);
+            }, time);
+            beatIndex++;
+            return;
+          }
 
-        // ── Click ─────────────────────────────────────────────────
-        clickSynth?.triggerAttackRelease(
-          beat === 1 ? "C2" : "C3",
-          "16n", time,
-          beat === 1 ? 0.9 : 0.35
-        );
-        if (soloRef.current.rhythm === "shuffle") {
+          // ── Single-bar "play once" stops after exactly one pass ────
+          if (range && !range.loop && beatIndex >= barCount * 4) {
+            Tone.getDraw().schedule(() => { if (!cancelled) stop(); }, time);
+            transport.stop(time);
+            return;
+          }
+
+          const beat = (beatIndex % 4) + 1;
+          const bar  = rangeStartBar + (Math.floor(beatIndex / 4) % barCount);
+
+          // ── Click (shuffle swing feel throughout) ──────────────────
+          clickSynth?.triggerAttackRelease(
+            beat === 1 ? "C2" : "C3",
+            "16n", time,
+            beat === 1 ? 0.9 : 0.35
+          );
           clickSynth?.triggerAttackRelease("C3", "16n", time + secondsPerBeat * (2 / 3), 0.18);
-        }
 
-        // ── Chord strum on beat 1 ─────────────────────────────────
-        if (beat === 1) {
-          const chord = getChordForBar(key, bar);
-          const voicing = getChordVoicing(chord.root, chord.notes);
-          voicing.forEach((note, i) => {
-            chordSynth?.triggerAttackRelease(note, "4n", time + i * 0.018, 0.55);
-          });
+          // ── Chord strum on beat 1 ─────────────────────────────────
+          if (beat === 1) {
+            const solo = soloRef.current;
+            const chord = getChordForBar(solo.key, bar, solo.chordProgression);
+            const voicing = getChordVoicing(chord.root, chord.notes);
+            voicing.forEach((note, i) => {
+              chordSynth?.triggerAttackRelease(note, "4n", time + i * 0.018, 0.55);
+            });
 
-          // ── Solo phrase for this bar ──────────────────────────────
-          const solo = soloRef.current;
-          if (solo.enabled && (soloSynth || soloSampler)) {
-            if (skipNextBarRef.current) {
-              // A cross-bar phrase from the previous bar is still ringing into
-              // this bar — don't start a new phrase, just clear the flag.
-              skipNextBarRef.current = false;
-            } else {
-              const role = bar % 2 === 1 ? "call" : "response";
-              const phrase = generateBarPhrase(
-                chord.root,
-                chord.degree,
-                solo.fretStart, solo.fretEnd,
-                solo.strStart, solo.strEnd,
-                solo.rhythm,
-                role,
-              );
+            // ── Solo phrase for this bar ──────────────────────────────
+            if (soloSynth || soloSampler) {
+              if (skipNextBarRef.current) {
+                // A cross-bar phrase from the previous bar is still ringing into
+                // this bar — don't start a new phrase, just clear the flag.
+                skipNextBarRef.current = false;
+              } else {
+                const phrase = solo.bars.get(bar) ?? [];
 
-              const spansNextBar = phrase.some(n => n.beatOffset >= 4);
-              if (spansNextBar) skipNextBarRef.current = true;
+                const spansNextBar = phrase.some(n => n.beatOffset >= 4);
+                if (spansNextBar) skipNextBarRef.current = true;
 
-              // Open-string MIDI pitches for Hz calculation without Tone.Frequency
-              const OPEN_MIDI = [40, 45, 50, 55, 59, 64];
-              const midiToHz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
+                // Open-string MIDI pitches for Hz calculation without Tone.Frequency
+                const OPEN_MIDI = [40, 45, 50, 55, 59, 64];
+                const midiToHz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
 
-              for (let idx = 0; idx < phrase.length; idx++) {
-                const n = phrase[idx];
-                const noteTime = time + n.beatOffset * secondsPerBeat;
-                const noteDurSec = Tone.Time(n.duration).toSeconds();
+                for (let idx = 0; idx < phrase.length; idx++) {
+                  const n = phrase[idx];
+                  const noteTime = time + n.beatOffset * secondsPerBeat;
+                  const noteDurSec = Tone.Time(n.duration).toSeconds();
+                  // Legato notes (hammer-on/pull-off, or a slide's landing note) weren't
+                  // freshly picked — play them noticeably softer than a real pick attack.
+                  const velocity = idx > 0 && isLegatoFrom(phrase[idx - 1], n) ? 0.4 : 0.7;
 
-                if (n.bend && soloSynth) {
-                  // Play note then ramp pitch upward — guitar bend effect.
-                  const startHz = midiToHz(OPEN_MIDI[n.stringIndex] + n.fretNumber);
-                  const endHz   = startHz * Math.pow(2, n.bend / 12);
-                  soloSynth.triggerAttack(`${n.note}${n.octave}`, noteTime, 0.7);
-                  soloSynth.frequency.linearRampToValueAtTime(endHz, noteTime + noteDurSec * 0.65);
-                  soloSynth.triggerRelease(noteTime + noteDurSec);
+                  if (n.bend && soloSynth) {
+                    // Play note then ramp pitch upward — guitar bend effect.
+                    const startHz = midiToHz(OPEN_MIDI[n.stringIndex] + n.fretNumber);
+                    const endHz   = startHz * Math.pow(2, n.bend / 12);
+                    soloSynth.triggerAttack(`${n.note}${n.octave}`, noteTime, velocity);
+                    soloSynth.frequency.linearRampToValueAtTime(endHz, noteTime + noteDurSec * 0.65);
+                    soloSynth.triggerRelease(noteTime + noteDurSec);
 
-                  // Show the source fret immediately, then light up the bend target
-                  // fret (same string, +bend semitones) at 40% through so it appears
-                  // as the pitch "arrives" at its destination.
+                    // Show the source fret immediately, then light up the bend target
+                    // fret (same string, +bend semitones) at 40% through so it appears
+                    // as the pitch "arrives" at its destination.
+                    Tone.getDraw().schedule(() => {
+                      if (cancelled) return;
+                      setActiveSoloNote({ stringIndex: n.stringIndex, fretNumber: n.fretNumber });
+                      setActiveSoloNoteSecondary({
+                        stringIndex: n.stringIndex,
+                        fretNumber:  n.fretNumber + n.bend!,
+                        type: "bend",
+                      });
+                    }, noteTime + noteDurSec * 0.4);
+
+                  } else if (n.slideToNext && idx < phrase.length - 1 && soloSynth) {
+                    // Slide: attack this note, ramp frequency toward next note's pitch.
+                    const next  = phrase[idx + 1];
+                    const endHz = midiToHz(OPEN_MIDI[next.stringIndex] + next.fretNumber);
+                    soloSynth.triggerAttack(`${n.note}${n.octave}`, noteTime, velocity);
+                    soloSynth.frequency.linearRampToValueAtTime(endHz, noteTime + noteDurSec);
+                    soloSynth.triggerRelease(noteTime + noteDurSec);
+
+                    // Show both source and destination immediately so the player
+                    // can see where the slide is heading.
+                    Tone.getDraw().schedule(() => {
+                      if (cancelled) return;
+                      setActiveSoloNoteSecondary({
+                        stringIndex: next.stringIndex,
+                        fretNumber:  next.fretNumber,
+                        type: "slide",
+                      });
+                    }, noteTime);
+
+                  } else {
+                    // Route plain notes through the sampler (real guitar samples)
+                    // once it has finished loading; fall back to FMSynth until then.
+                    const player = samplerLoadedRef.current && soloSampler ? soloSampler : soloSynth;
+                    player?.triggerAttackRelease(`${n.note}${n.octave}`, n.duration, noteTime, velocity);
+                  }
+
                   Tone.getDraw().schedule(() => {
                     if (cancelled) return;
                     setActiveSoloNote({ stringIndex: n.stringIndex, fretNumber: n.fretNumber });
-                    setActiveSoloNoteSecondary({
-                      stringIndex: n.stringIndex,
-                      fretNumber:  n.fretNumber + n.bend!,
-                      type: "bend",
-                    });
-                  }, noteTime + noteDurSec * 0.4);
-
-                } else if (n.slideToNext && idx < phrase.length - 1 && soloSynth) {
-                  // Slide: attack this note, ramp frequency toward next note's pitch.
-                  const next  = phrase[idx + 1];
-                  const endHz = midiToHz(OPEN_MIDI[next.stringIndex] + next.fretNumber);
-                  soloSynth.triggerAttack(`${n.note}${n.octave}`, noteTime, 0.7);
-                  soloSynth.frequency.linearRampToValueAtTime(endHz, noteTime + noteDurSec);
-                  soloSynth.triggerRelease(noteTime + noteDurSec);
-
-                  // Show both source and destination immediately so the player
-                  // can see where the slide is heading.
-                  Tone.getDraw().schedule(() => {
-                    if (cancelled) return;
-                    setActiveSoloNoteSecondary({
-                      stringIndex: next.stringIndex,
-                      fretNumber:  next.fretNumber,
-                      type: "slide",
-                    });
+                    // Clear secondary when a plain note plays (new phrase)
+                    if (!n.bend && !n.slideToNext) setActiveSoloNoteSecondary(null);
                   }, noteTime);
-
-                } else {
-                  // Route plain notes through the sampler (real guitar samples)
-                  // once it has finished loading; fall back to FMSynth until then.
-                  const player = samplerLoadedRef.current && soloSampler ? soloSampler : soloSynth;
-                  player?.triggerAttackRelease(`${n.note}${n.octave}`, n.duration, noteTime, 0.7);
                 }
 
-                Tone.getDraw().schedule(() => {
-                  if (cancelled) return;
-                  setActiveSoloNote({ stringIndex: n.stringIndex, fretNumber: n.fretNumber });
-                  // Clear secondary when a plain note plays (new phrase)
-                  if (!n.bend && !n.slideToNext) setActiveSoloNoteSecondary(null);
-                }, noteTime);
-              }
-
-              // Schedule note-display clear: at bar end for normal phrases, or
-              // after the last note for cross-bar phrases that span into next bar.
-              if (!spansNextBar) {
-                Tone.getDraw().schedule(() => {
-                  if (cancelled) return;
-                  setActiveSoloNote(null);
-                  setActiveSoloNoteSecondary(null);
-                }, time + 4 * secondsPerBeat - 0.05);
-              } else if (phrase.length > 0) {
-                const lastN = phrase[phrase.length - 1];
-                const clearAt = time + lastN.beatOffset * secondsPerBeat
-                  + Tone.Time(lastN.duration).toSeconds() + 0.1;
-                Tone.getDraw().schedule(() => {
-                  if (cancelled) return;
-                  setActiveSoloNote(null);
-                  setActiveSoloNoteSecondary(null);
-                }, clearAt);
+                // Schedule note-display clear: at bar end for normal phrases, or
+                // after the last note for cross-bar phrases that span into next bar.
+                if (!spansNextBar) {
+                  Tone.getDraw().schedule(() => {
+                    if (cancelled) return;
+                    setActiveSoloNote(null);
+                    setActiveSoloNoteSecondary(null);
+                  }, time + 4 * secondsPerBeat - 0.05);
+                } else if (phrase.length > 0) {
+                  const lastN = phrase[phrase.length - 1];
+                  const clearAt = time + lastN.beatOffset * secondsPerBeat
+                    + Tone.Time(lastN.duration).toSeconds() + 0.1;
+                  Tone.getDraw().schedule(() => {
+                    if (cancelled) return;
+                    setActiveSoloNote(null);
+                    setActiveSoloNoteSecondary(null);
+                  }, clearAt);
+                }
               }
             }
           }
+
+          // ── UI state ──────────────────────────────────────────────
+          const capturedBar  = bar;
+          const capturedBeat = beat;
+          Tone.getDraw().schedule(() => {
+            if (cancelled) return;
+            setIsCountIn(false);
+            setCountInBeat(0);
+            setCurrentBar(capturedBar);
+            setCurrentBeat(capturedBeat);
+          }, time);
+
+          beatIndex++;
+        } catch (err) {
+          // Tone.js can throw if a scheduled time collides with one already committed
+          // to a synth's audio-param timeline (e.g. a very rapid stop-then-restart).
+          // It's a benign timing race, not corrupted state — skip this tick rather
+          // than crashing the page.
+          console.warn("useBluesEngine: skipped a tick after a Tone.js scheduling error", err);
         }
-
-        // ── UI state ──────────────────────────────────────────────
-        const capturedBar     = bar;
-        const capturedBeat    = beat;
-        const capturedElapsed = elapsed;
-        Tone.getDraw().schedule(() => {
-          if (cancelled) return;
-          setIsCountIn(false);
-          setCountInBeat(0);
-          setCurrentBar(capturedBar);
-          setCurrentBeat(capturedBeat);
-          setElapsedSeconds(capturedElapsed);
-        }, time);
-
-        beatIndex++;
       }, "4n");
 
       Tone.start().then(() => {
@@ -342,4 +361,8 @@ export function useBluesEngine() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying]);
+}
+
+function rangeKey(range: PlayRange): string {
+  return range ? `${range.bar}:${range.loop}` : "full";
 }

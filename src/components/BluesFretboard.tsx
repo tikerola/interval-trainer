@@ -4,8 +4,8 @@ import { useRef, useCallback } from "react";
 import { OPEN_STRINGS, NOTES, getNoteAtPosition, type Note } from "@/lib/music/notes";
 import { getBluesNoteRole, type BluesRole } from "@/lib/music/blues";
 
-const FRET_COUNT = 15;
-const FRET_MARKERS = [3, 5, 7, 9, 12, 15];
+export const FRET_COUNT = 17;
+const FRET_MARKERS = [3, 5, 7, 9, 12, 15, 17];
 const DOUBLE_MARKERS = [12];
 const DISPLAY_ORDER = [...Array(OPEN_STRINGS.length)].map((_, i) => OPEN_STRINGS.length - 1 - i);
 const STRING_HEIGHTS = [3.5, 3, 2.5, 2, 1.5, 1];

@@ -26,13 +26,17 @@ export function getDom7Notes(root: Note): [Note, Note, Note, Note] {
   return [root, offsetNote(root, 4), offsetNote(root, 7), offsetNote(root, 10)];
 }
 
-export function getChordForBar(key: Note, bar: number): {
+export function getChordForBar(
+  key: Note,
+  bar: number,
+  progression: readonly BluesDegree[] = BLUES_PROGRESSION,
+): {
   root: Note;
   degree: BluesDegree;
   name: string;
   notes: [Note, Note, Note, Note];
 } {
-  const degree = BLUES_PROGRESSION[bar - 1] as BluesDegree;
+  const degree = progression[(bar - 1) % progression.length];
   const root = getChordRoot(key, degree);
   return { root, degree, name: `${root}7`, notes: getDom7Notes(root) };
 }
@@ -70,13 +74,6 @@ export function getChordVoicing(root: Note, notes: [Note, Note, Note, Note]): st
     return `${note}${octave}`;
   });
 }
-
-export const DURATION_OPTIONS = [
-  { label: "1 min",  seconds: 60  },
-  { label: "2 min",  seconds: 120 },
-  { label: "5 min",  seconds: 300 },
-  { label: "10 min", seconds: 600 },
-] as const;
 
 export const FRET_PRESETS = [
   { label: "0–4",   start: 0,  end: 4  },

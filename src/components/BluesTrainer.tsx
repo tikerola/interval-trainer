@@ -10,8 +10,10 @@ import {
 } from "@/store/phraseBuilderStore";
 import { usePhraseBuilderEngine } from "@/hooks/usePhraseBuilderEngine";
 import { getChordAtSlot, getSectionStartSlot, getTotalSlots } from "@/lib/music/phraseBuilder";
+import { useBluesStore } from "@/store/bluesStore";
 import BluesFretboard from "./BluesFretboard";
 import PhraseTimeline from "./PhraseTimeline";
+import SoloPlayerPanel from "./SoloPlayerPanel";
 
 const DEGREE_OPTIONS: { value: BluesDegree; label: string }[] = [
   { value: 1, label: "I" },
@@ -198,6 +200,9 @@ export default function BluesTrainer() {
     setRecordPhase, addPendingSlot, clearPendingSlots, promotePendingSlot, setTapPreRollBar,
   } = usePhraseBuilderStore();
 
+  const soloIsPlaying = useBluesStore((s) => s.isPlaying);
+  const anyPlaying = isPlaying || soloIsPlaying;
+
   const slotsPerBar  = SLOTS_PER_BAR[phraseGrid];
   const slotsPerBeat = SLOTS_PER_BEAT[phraseGrid];
 
@@ -283,8 +288,8 @@ export default function BluesTrainer() {
             {NOTES.map((n) => (
               <button
                 key={n}
-                onClick={() => !isPlaying && setKey(n)}
-                disabled={isPlaying}
+                onClick={() => !anyPlaying && setKey(n)}
+                disabled={anyPlaying}
                 className={`px-2.5 py-1 rounded font-mono text-xs transition-all duration-150 ${
                   key === n
                     ? "bg-amber-400 text-stone-900 font-bold"
@@ -311,17 +316,17 @@ export default function BluesTrainer() {
             ))}
           </div>
           <div className="flex gap-0.5 p-0.5 bg-stone-800 rounded">
-            {(["jam", "record"] as const).map((m) => (
+            {(["jam", "record", "solo"] as const).map((m) => (
               <button
                 key={m}
-                disabled={isPlaying}
+                disabled={anyPlaying}
                 onClick={() => setMode(m)}
                 className={`px-3 py-1 rounded font-mono text-xs transition-all duration-150 ${
                   mode === m
                     ? "bg-stone-600 text-stone-100 font-bold"
                     : "text-stone-400 hover:text-stone-200 disabled:opacity-40"
                 }`}
-              >{m === "jam" ? "Jam" : "Record"}</button>
+              >{m === "jam" ? "Jam" : m === "record" ? "Record" : "Solo"}</button>
             ))}
           </div>
         </div>
@@ -329,6 +334,7 @@ export default function BluesTrainer() {
 
 
       {/* ── Section builder ── */}
+      {mode !== "solo" && (
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Sections</span>
         <button
@@ -386,6 +392,7 @@ export default function BluesTrainer() {
           >+ Add</button>
         )}
       </div>
+      )}
 
       {/* ── Jam: chord progression bar ── */}
       {mode === "jam" && (
@@ -397,6 +404,11 @@ export default function BluesTrainer() {
           keyNote={key}
         />
       )}
+
+      {mode === "solo" ? (
+        <SoloPlayerPanel noteDisplay={noteDisplay} />
+      ) : (
+      <>
 
       {/* ── Current chord + fret range ── */}
       <div className="flex items-end gap-3">
@@ -660,6 +672,9 @@ export default function BluesTrainer() {
           </button>
         )}
       </div>
+
+      </>
+      )}
 
     </div>
   );
