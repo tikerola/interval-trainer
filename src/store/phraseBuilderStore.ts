@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Note } from "@/lib/music/notes";
+import type { CagedShape } from "@/lib/music/caged";
 
 export type BluesDegree = 1 | 4 | 5;
 export type AppMode = "jam" | "record" | "solo";
@@ -98,6 +99,14 @@ interface PhraseBuilderState {
   pendingSlots: PendingSlot[];
   tapPreRollBar: number;
 
+  jamCagedShapes: CagedShape[]; // empty = no position overlay
+  jamFocusedStrings: number[]; // empty = all strings focused
+
+  toggleJamCagedShape: (shape: CagedShape) => void;
+  setJamCagedShapes: (shapes: CagedShape[]) => void;
+  toggleJamFocusedString: (stringIndex: number) => void;
+  clearJamFocusedStrings: () => void;
+
   setKey: (key: Note) => void;
   setBpm: (bpm: number) => void;
   setMode: (m: AppMode) => void;
@@ -123,6 +132,7 @@ interface PhraseBuilderState {
   setIsPlaying: (v: boolean) => void;
   setPlayheadSlot: (slot: number) => void;
   setActivePhraseNote: (n: { stringIndex: number; fretNumber: number } | null) => void;
+  pause: () => void;
   stop: () => void;
 }
 
@@ -146,6 +156,25 @@ export const usePhraseBuilderStore = create<PhraseBuilderState>((set) => ({
   isPlaying: false,
   playheadSlot: 0,
   activePhraseNote: null,
+
+  jamCagedShapes: [],
+  jamFocusedStrings: [],
+
+  toggleJamCagedShape: (shape) => set((s) => ({
+    jamCagedShapes: s.jamCagedShapes.includes(shape)
+      ? s.jamCagedShapes.filter((sh) => sh !== shape)
+      : [...s.jamCagedShapes, shape],
+  })),
+  setJamCagedShapes: (jamCagedShapes) => set({ jamCagedShapes }),
+  toggleJamFocusedString: (stringIndex) => set((s) => {
+    const has = s.jamFocusedStrings.includes(stringIndex);
+    return {
+      jamFocusedStrings: has
+        ? s.jamFocusedStrings.filter((i) => i !== stringIndex)
+        : [...s.jamFocusedStrings, stringIndex],
+    };
+  }),
+  clearJamFocusedStrings: () => set({ jamFocusedStrings: [] }),
 
   setKey: (key) => set({ key }),
   setBpm: (bpm) => set({ bpm }),
@@ -347,5 +376,6 @@ export const usePhraseBuilderStore = create<PhraseBuilderState>((set) => ({
   setIsPlaying: (v) => set({ isPlaying: v }),
   setPlayheadSlot: (slot) => set({ playheadSlot: slot }),
   setActivePhraseNote: (n) => set({ activePhraseNote: n }),
+  pause: () => set({ isPlaying: false, activePhraseNote: null }),
   stop: () => set({ isPlaying: false, playheadSlot: 0, activePhraseNote: null, tapPreRollBar: 0 }),
 }));

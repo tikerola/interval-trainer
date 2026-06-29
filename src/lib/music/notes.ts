@@ -8,6 +8,9 @@ export type Note = (typeof NOTES)[number];
 // Standard tuning open strings (low E to high E)
 export const OPEN_STRINGS: Note[] = ["E", "A", "D", "G", "B", "E"];
 
+// Fretboard display range used throughout the app (matches the longest transcribed solo).
+export const FRET_COUNT = 17;
+
 export function getNoteAtPosition(
   stringIndex: number,
   fretNumber: number

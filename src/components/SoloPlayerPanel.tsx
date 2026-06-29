@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { getChordForBar } from "@/lib/music/blues";
+import { TRANSCRIBED_SOLOS } from "@/lib/music/solos";
 import { useBluesStore } from "@/store/bluesStore";
 import { useBluesEngine } from "@/hooks/useBluesEngine";
 import BluesFretboard, { FRET_COUNT } from "./BluesFretboard";
@@ -17,10 +18,10 @@ export default function SoloPlayerPanel({
   const [view, setView] = useState<"none" | "tab" | "analysis">("none");
 
   const {
-    solo, bpm, setBpm,
+    solo, bpm, setBpm, loadSolo,
     isPlaying, playRange, playFull, stop,
     isCountIn, countInBeat, currentBar, currentBeat,
-    activeSoloNote, activeSoloNoteSecondary,
+    activeSoloNotes, activeSoloNoteSecondary,
   } = useBluesStore();
 
   const barCount = solo.chordProgression.length;
@@ -32,9 +33,21 @@ export default function SoloPlayerPanel({
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <div className="text-xs text-stone-400 uppercase tracking-widest font-mono">Solo Player</div>
-          <div className="text-[10px] text-stone-600 font-mono mt-0.5">
-            {solo.title} · {solo.artist}
-          </div>
+          <select
+            disabled={isPlaying}
+            value={solo.id}
+            onChange={(e) => {
+              const next = TRANSCRIBED_SOLOS.find((s) => s.id === e.target.value);
+              if (next) loadSolo(next);
+            }}
+            className="bg-transparent text-stone-300 text-[10px] font-mono mt-0.5 border-none outline-none cursor-pointer disabled:opacity-40 -ml-0.5"
+          >
+            {TRANSCRIBED_SOLOS.map((s) => (
+              <option key={s.id} value={s.id} className="bg-stone-900 text-stone-100">
+                {s.title} · {s.artist}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="flex items-center gap-2">
@@ -82,7 +95,7 @@ export default function SoloPlayerPanel({
         stringStart={0}
         stringEnd={5}
         noteDisplay={noteDisplay}
-        activeSoloNote={activeSoloNote}
+        activeSoloNotes={activeSoloNotes}
         activeSoloNoteSecondary={activeSoloNoteSecondary}
       />
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useCallback, useState, useEffect, useRef } from "react";
-import { NOTES, getNoteAtPosition } from "@/lib/music/notes";
+import { NOTES, FRET_COUNT, getNoteAtPosition, type Note } from "@/lib/music/notes";
 import {
   usePhraseBuilderStore, DURATION_LABELS, AVAILABLE_DURATIONS,
   SLOTS_PER_BAR, SLOTS_PER_BEAT,
@@ -11,6 +11,9 @@ import {
 import { usePhraseBuilderEngine } from "@/hooks/usePhraseBuilderEngine";
 import { getChordAtSlot, getSectionStartSlot, getTotalSlots } from "@/lib/music/phraseBuilder";
 import { useBluesStore } from "@/store/bluesStore";
+import { getAvailableKeys } from "@/lib/music/solos/transpose";
+import { SCALES } from "@/lib/music/scales";
+import { getCagedBox, CAGED_SHAPES } from "@/lib/music/caged";
 import BluesFretboard from "./BluesFretboard";
 import PhraseTimeline from "./PhraseTimeline";
 import SoloPlayerPanel from "./SoloPlayerPanel";
@@ -20,6 +23,41 @@ const DEGREE_OPTIONS: { value: BluesDegree; label: string }[] = [
   { value: 4, label: "IV" },
   { value: 5, label: "V" },
 ];
+
+// Target-note practice: which chord tone to aim for on each chord change.
+// idx points into getDom7Notes order — [root, 3rd, 5th, b7].
+type TargetToneKey = "root" | "third" | "fifth" | "seventh";
+const TARGET_TONES: { key: TargetToneKey; label: string; dot: string; idx: number }[] = [
+  { key: "root",    label: "Root", dot: "R",  idx: 0 },
+  { key: "third",   label: "3rd",  dot: "3",  idx: 1 },
+  { key: "fifth",   label: "5th",  dot: "5",  idx: 2 },
+  { key: "seventh", label: "b7",   dot: "b7", idx: 3 },
+];
+
+// All fretboard positions of a note inside any of the active CAGED boxes (whole
+// neck when none selected), restricted to focused strings (empty = all).
+function targetPositionsForNote(
+  note: Note,
+  boxes: { start: number; end: number }[],
+  focusedStrings: number[],
+): { stringIndex: number; fretNumber: number }[] {
+  const ranges = boxes.length > 0 ? boxes : [{ start: 0, end: FRET_COUNT }];
+  const seen = new Set<string>();
+  const out: { stringIndex: number; fretNumber: number }[] = [];
+  for (const { start, end } of ranges) {
+    for (let s = 0; s < 6; s++) {
+      if (focusedStrings.length > 0 && !focusedStrings.includes(s)) continue;
+      for (let f = start; f <= end; f++) {
+        const k = `${s}:${f}`;
+        if (!seen.has(k) && getNoteAtPosition(s, f).note === note) {
+          seen.add(k);
+          out.push({ stringIndex: s, fretNumber: f });
+        }
+      }
+    }
+  }
+  return out;
+}
 
 function BpmStepper() {
   const { bpm, setBpm, isPlaying } = usePhraseBuilderStore();
@@ -62,12 +100,13 @@ function ChordProgressionBar({
       {sections.map((sec, sIdx) => {
         const secStart = getSectionStartSlot(sections, sIdx, phraseGrid);
         const secSlots = sec.bars * spb;
-        const isCurrent = isPlaying && playheadSlot >= secStart && playheadSlot < secStart + secSlots;
+        const active = isPlaying || playheadSlot > 0;
+        const isCurrent = active && playheadSlot >= secStart && playheadSlot < secStart + secSlots;
         const barInSection = isCurrent ? Math.floor((playheadSlot - secStart) / spb) : -1;
         const chord = getChordAtSlot(keyNote as Parameters<typeof getChordAtSlot>[0], sections, secStart, phraseGrid);
 
         const secEnd = secStart + secSlots;
-        const progress = !isPlaying ? 0
+        const progress = !active ? 0
           : isCurrent ? (playheadSlot - secStart) / secSlots
           : playheadSlot >= secEnd ? 1
           : 0;
@@ -189,27 +228,61 @@ export default function BluesTrainer() {
   const [noteDisplay, setNoteDisplay] = useState<"triad" | "pentatonic">("triad");
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
 
+  // Jam target-note practice (visual guide — see TARGET_TONES)
+  const [targetPractice, setTargetPractice] = useState(false);
+  const [targetTones, setTargetTones] = useState<TargetToneKey[]>(["third"]);
+  const [targetLeadBars, setTargetLeadBars] = useState(1);
+
   const {
     key, bpm, mode, phraseGrid, sections, notes, selectedDuration,
     cursorSlot, fretStart, fretEnd, isPlaying, playheadSlot,
     activePhraseNote, recordPhase, pendingSlots, tapPreRollBar,
+    jamCagedShapes, jamFocusedStrings,
     setKey, setMode, setGrid, addSection, removeSection, updateSection, setSections,
     setSelectedDuration, setCursorSlot, setFretRange,
     placeNote, removeNote, updateNote, updateNotes, clearNotes,
-    setIsPlaying, stop,
+    setIsPlaying, pause, stop,
     setRecordPhase, addPendingSlot, clearPendingSlots, promotePendingSlot, setTapPreRollBar,
+    toggleJamCagedShape, setJamCagedShapes, toggleJamFocusedString, clearJamFocusedStrings,
   } = usePhraseBuilderStore();
 
   const soloIsPlaying = useBluesStore((s) => s.isPlaying);
   const anyPlaying = isPlaying || soloIsPlaying;
 
+  const soloKey = useBluesStore((s) => s.solo.key);
+  const baseSolo = useBluesStore((s) => s.baseSolo);
+  const setSoloKey = useBluesStore((s) => s.setKey);
+  const availableSoloKeys = useMemo(() => getAvailableKeys(baseSolo, FRET_COUNT), [baseSolo]);
+
   const slotsPerBar  = SLOTS_PER_BAR[phraseGrid];
   const slotsPerBeat = SLOTS_PER_BEAT[phraseGrid];
 
+  // Paused (playheadSlot > 0 while not playing) keeps the chord frozen at the pause
+  // point so the fretboard stays in context; only a full stop resets to cursor.
   const displayChord = useMemo(
-    () => getChordAtSlot(key, sections, isPlaying ? playheadSlot : cursorSlot, phraseGrid),
+    () => getChordAtSlot(key, sections, (isPlaying || playheadSlot > 0) ? playheadSlot : cursorSlot, phraseGrid),
     [key, sections, isPlaying, playheadSlot, cursorSlot, phraseGrid],
   );
+
+  const mixolydianScale = useMemo(() => SCALES.find((s) => s.name === "Mixolydian")!, []);
+
+  // One box per selected shape, each snapped to the closest matching position on
+  // the current chord root (so the highlight follows chord changes automatically).
+  const cagedBoxes = useMemo(() => {
+    if (mode !== "jam" || jamCagedShapes.length === 0) return [];
+    const allChordBoxes = CAGED_SHAPES.map((s) => getCagedBox(displayChord.root, s, mixolydianScale));
+    return jamCagedShapes.map((shape) => {
+      const referenceBox = getCagedBox(key, shape, mixolydianScale);
+      const refCenter = (referenceBox.start + referenceBox.end) / 2;
+      return allChordBoxes.reduce((best, box) => {
+        const d  = Math.abs((box.start + box.end) / 2 - refCenter);
+        const db = Math.abs((best.start + best.end) / 2 - refCenter);
+        return d < db ? box : best;
+      });
+    });
+  }, [mode, jamCagedShapes, key, displayChord.root, mixolydianScale]);
+
+  const targetCfgs = TARGET_TONES.filter((t) => targetTones.includes(t.key));;
 
   const isEditing = mode === "record" && !isPlaying && recordPhase !== "tapping";
 
@@ -243,6 +316,50 @@ export default function BluesTrainer() {
     () => sections.reduce((sum, sec) => sum + sec.bars * SLOTS_PER_BAR[phraseGrid], 0),
     [sections, phraseGrid],
   );
+
+  // Target-note practice: current chord's target tone (always emphasized) plus the
+  // next chord's target tone (blinks during the lead-in window so the player can
+  // pre-position the hand before the change).
+  const { targetNotes, targetPreviewNotes } = useMemo(() => {
+    const empty = {
+      targetNotes: [] as { stringIndex: number; fretNumber: number }[],
+      targetPreviewNotes: [] as { stringIndex: number; fretNumber: number; label: string }[],
+    };
+    if (mode !== "jam" || !targetPractice || targetCfgs.length === 0) return empty;
+
+    const focused = jamFocusedStrings;
+    let preview: { stringIndex: number; fretNumber: number; label: string }[] = [];
+    if ((isPlaying || playheadSlot > 0) && totalSlots > 0) {
+      let acc = 0;
+      const starts: number[] = [];
+      for (const sec of sections) { starts.push(acc); acc += sec.bars * slotsPerBar; }
+      const nextStart = starts.find((s) => s > playheadSlot);
+      const nextBoundary = nextStart ?? totalSlots;
+      const nextChord = getChordAtSlot(key, sections, nextBoundary % totalSlots, phraseGrid);
+      const inWindow = nextBoundary - playheadSlot <= targetLeadBars * slotsPerBar;
+      if (inWindow && nextChord.root !== displayChord.root) {
+        const nextChordBoxes = jamCagedShapes.length > 0
+          ? jamCagedShapes.map((shape) => {
+              const refBox = getCagedBox(key, shape, mixolydianScale);
+              const refCenter = (refBox.start + refBox.end) / 2;
+              return CAGED_SHAPES
+                .map((s) => getCagedBox(nextChord.root, s, mixolydianScale))
+                .reduce((best, box) => Math.abs((box.start + box.end) / 2 - refCenter) < Math.abs((best.start + best.end) / 2 - refCenter) ? box : best);
+            })
+          : [];
+        // Union positions across all selected tones; first tone wins if positions overlap.
+        const seen = new Set<string>();
+        for (const cfg of targetCfgs) {
+          for (const pos of targetPositionsForNote(nextChord.notes[cfg.idx], nextChordBoxes, focused)) {
+            const k = `${pos.stringIndex}:${pos.fretNumber}`;
+            if (!seen.has(k)) { seen.add(k); preview.push({ ...pos, label: cfg.dot }); }
+          }
+        }
+      }
+    }
+    return { targetNotes: [] as { stringIndex: number; fretNumber: number }[], targetPreviewNotes: preview };
+  }, [mode, targetPractice, targetCfgs, jamFocusedStrings, displayChord, cagedBoxes, jamCagedShapes,
+      isPlaying, totalSlots, sections, slotsPerBar, playheadSlot, key, phraseGrid, targetLeadBars, mixolydianScale]);
 
   // Exit pitching phase automatically when all pending slots are assigned
   useEffect(() => {
@@ -281,27 +398,32 @@ export default function BluesTrainer() {
     <div className="w-full max-w-5xl flex flex-col gap-5">
 
       {/* ── Top row: Key, BPM, Mode ── */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex items-center flex-wrap gap-4">
         <div className="flex items-center gap-2">
           <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Key</span>
           <div className="flex flex-wrap gap-1">
-            {NOTES.map((n) => (
-              <button
-                key={n}
-                onClick={() => !anyPlaying && setKey(n)}
-                disabled={anyPlaying}
-                className={`px-2.5 py-1 rounded font-mono text-xs transition-all duration-150 ${
-                  key === n
-                    ? "bg-amber-400 text-stone-900 font-bold"
-                    : "bg-stone-800 text-stone-300 hover:bg-stone-700 disabled:opacity-40"
-                }`}
-              >{n}</button>
-            ))}
+            {NOTES.map((n) => {
+              const isSelected = mode === "solo" ? soloKey === n : key === n;
+              const isDisabled = mode === "solo" ? !availableSoloKeys.includes(n) : anyPlaying;
+              return (
+                <button
+                  key={n}
+                  onClick={() => (mode === "solo" ? setSoloKey(n) : !anyPlaying && setKey(n))}
+                  disabled={isDisabled}
+                  title={mode === "solo" && isDisabled ? "Out of range for this transcription" : undefined}
+                  className={`px-2.5 py-1 rounded font-mono text-xs transition-all duration-150 ${
+                    isSelected
+                      ? "bg-amber-400 text-stone-900 font-bold"
+                      : "bg-stone-800 text-stone-300 hover:bg-stone-700 disabled:opacity-40"
+                  }`}
+                >{n}</button>
+              );
+            })}
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <BpmStepper />
+        <div className="flex items-center gap-4 ml-auto">
+          {mode !== "solo" && <BpmStepper />}
           <div className="flex gap-0.5 p-0.5 bg-stone-800 rounded">
             {(["triad", "pentatonic"] as const).map((d) => (
               <button
@@ -405,6 +527,123 @@ export default function BluesTrainer() {
         />
       )}
 
+      {/* ── Jam: CAGED position panel (multi-select) ── */}
+      {mode === "jam" && (
+        <div className="flex flex-wrap items-center gap-3 px-1">
+          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Position</span>
+          <div className="flex flex-wrap gap-1.5">
+            {CAGED_SHAPES.map((shape) => {
+              const box = getCagedBox(key, shape, mixolydianScale);
+              const isSelected = jamCagedShapes.includes(shape);
+              return (
+                <button
+                  key={shape}
+                  onClick={() => toggleJamCagedShape(shape)}
+                  className={`flex flex-col items-center px-3 py-1.5 rounded font-mono transition-all duration-150 min-w-[48px] ${
+                    isSelected
+                      ? "bg-sky-400 text-stone-900 font-bold"
+                      : "bg-stone-800 text-stone-300 hover:bg-stone-700 hover:text-stone-100"
+                  }`}
+                >
+                  <span className="text-sm">{shape}</span>
+                  <span className={`text-[9px] mt-0.5 tabular-nums ${isSelected ? "opacity-70" : "opacity-40"}`}>
+                    {box.start}–{box.end}
+                  </span>
+                </button>
+              );
+            })}
+            {jamCagedShapes.length > 0 && (
+              <button
+                onClick={() => { setJamCagedShapes([]); clearJamFocusedStrings(); }}
+                className="flex flex-col items-center justify-center px-3 py-1.5 rounded font-mono min-w-[48px] bg-stone-800 text-stone-400 hover:bg-stone-700 hover:text-stone-200 transition-colors"
+                title="Clear all positions"
+              >
+                <span className="text-sm">✕</span>
+                <span className="text-[9px] mt-0.5 opacity-40">clear</span>
+              </button>
+            )}
+            <button
+              disabled={isPlaying}
+              onClick={() => {
+                const remaining = CAGED_SHAPES.filter((s) => !jamCagedShapes.includes(s));
+                const pool = remaining.length > 0 ? remaining : CAGED_SHAPES;
+                toggleJamCagedShape(pool[Math.floor(Math.random() * pool.length)]);
+              }}
+              className="px-3 py-1.5 rounded font-mono text-xs bg-stone-800 text-stone-400 hover:bg-stone-700 hover:text-stone-200 disabled:opacity-30 transition-colors"
+              title="Add a random position"
+            >
+              + Random
+            </button>
+          </div>
+          {jamFocusedStrings.length > 0 && (
+            <button
+              onClick={clearJamFocusedStrings}
+              className="text-[10px] font-mono text-stone-500 hover:text-stone-300 transition-colors"
+            >
+              {jamFocusedStrings.length === 1 ? "1 string" : `${jamFocusedStrings.length} strings`} focused · clear
+            </button>
+          )}
+          {jamFocusedStrings.length === 0 && (
+            <span className="text-[10px] font-mono text-stone-600">
+              click string labels to focus
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Jam: target-note practice ── */}
+      {mode === "jam" && (
+        <div className="flex flex-wrap items-center gap-3 px-1">
+          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Target</span>
+          <button
+            onClick={() => setTargetPractice((v) => !v)}
+            className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
+              targetPractice ? "bg-amber-400 text-stone-900 font-bold" : "bg-stone-800 text-stone-300 hover:bg-stone-700"
+            }`}
+          >
+            {targetPractice ? "● On" : "○ Off"}
+          </button>
+          {targetPractice && (
+            <>
+              <div className="flex gap-1">
+                {TARGET_TONES.map((t) => (
+                  <button
+                    key={t.key}
+                    onClick={() => setTargetTones((prev) =>
+                      prev.includes(t.key) ? prev.filter((k) => k !== t.key) : [...prev, t.key]
+                    )}
+                    className={`px-2.5 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
+                      targetTones.includes(t.key)
+                        ? "bg-amber-500/80 text-stone-900 font-bold"
+                        : "bg-stone-800 text-stone-400 hover:bg-stone-700"
+                    }`}
+                  >{t.label}</button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-mono text-stone-500 uppercase tracking-wide">Lead</span>
+                {[1, 2].map((b) => (
+                  <button
+                    key={b}
+                    onClick={() => setTargetLeadBars(b)}
+                    className={`px-2.5 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
+                      targetLeadBars === b
+                        ? "bg-stone-600 text-stone-100 font-bold"
+                        : "bg-stone-800 text-stone-400 hover:bg-stone-700"
+                    }`}
+                  >{b === 1 ? "1 bar" : "2 bars"}</button>
+                ))}
+              </div>
+              <span className="text-[10px] font-mono text-stone-600">
+                {jamCagedShapes.length === 0
+                  ? "tip: pick a position to focus the targets"
+                  : "next target blinks before each change"}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
       {mode === "solo" ? (
         <SoloPlayerPanel noteDisplay={noteDisplay} />
       ) : (
@@ -420,27 +659,34 @@ export default function BluesTrainer() {
             {displayChord.name}
           </div>
           <div className="text-[10px] text-stone-500 font-mono uppercase tracking-widest mt-0.5">
-            {isPlaying ? "playing" : mode === "record" ? "at cursor" : "chord"}
+            {isPlaying ? "playing" : playheadSlot > 0 && mode === "jam" ? "paused" : mode === "record" ? "at cursor" : "chord"}
           </div>
         </div>
-        <div className="ml-auto text-right">
-          <div className="text-xs font-mono text-stone-400 tabular-nums">frets {fretStart}–{fretEnd}</div>
-          <div className="text-[10px] text-stone-600 font-mono uppercase tracking-widest">drag edges to adjust</div>
-        </div>
+        {mode !== "jam" && (
+          <div className="ml-auto text-right">
+            <div className="text-xs font-mono text-stone-400 tabular-nums">frets {fretStart}–{fretEnd}</div>
+            <div className="text-[10px] text-stone-600 font-mono uppercase tracking-widest">drag edges to adjust</div>
+          </div>
+        )}
       </div>
 
       {/* ── Fretboard ── */}
       <BluesFretboard
         keyNote={key}
         chordNotes={displayChord.notes}
-        fretStart={fretStart}
-        fretEnd={fretEnd}
+        fretStart={mode === "jam" ? 0 : fretStart}
+        fretEnd={mode === "jam" ? FRET_COUNT : fretEnd}
         stringStart={0}
         stringEnd={5}
         noteDisplay={noteDisplay}
-        activeSoloNote={activePhraseNote}
+        activeSoloNotes={activePhraseNote ? [activePhraseNote] : []}
         activeSoloNoteSecondary={null}
-        onFretRangeChange={setFretRange}
+        targetNotes={targetNotes}
+        targetPreviewNotes={targetPreviewNotes}
+        cagedBoxes={cagedBoxes}
+        focusedStrings={mode === "jam" ? jamFocusedStrings : []}
+        onStringLabelClick={mode === "jam" ? toggleJamFocusedString : undefined}
+        onFretRangeChange={mode === "jam" ? undefined : setFretRange}
         isRecording={isEditing}
         onFretClick={(isEditing || recordPhase === "pitching") ? handleFretClick : undefined}
       />
@@ -646,19 +892,27 @@ export default function BluesTrainer() {
         </div>
       )}
 
-      {/* ── Play / Stop / Clear ── */}
+      {/* ── Play / Pause / Stop / Clear ── */}
       <div className="flex gap-2 items-center">
         {!isPlaying ? (
           <button
             onClick={() => { setSelectedNoteIds([]); setIsPlaying(true); }}
             className="px-8 py-3 rounded bg-amber-400 text-stone-900 font-bold font-mono tracking-wide hover:bg-amber-300 transition-colors text-sm"
           >
-            ▶ {mode === "jam" ? "Start Jam" : "Play Back"}
+            ▶ {mode === "jam" && playheadSlot > 0 ? "Resume" : mode === "jam" ? "Start Jam" : "Play Back"}
           </button>
         ) : (
           <button
-            onClick={stop}
+            onClick={mode === "jam" ? pause : stop}
             className="px-8 py-3 rounded bg-stone-700 text-stone-200 font-bold font-mono tracking-wide hover:bg-stone-600 transition-colors text-sm"
+          >
+            {mode === "jam" ? "⏸ Pause" : "■ Stop"}
+          </button>
+        )}
+        {mode === "jam" && !isPlaying && playheadSlot > 0 && (
+          <button
+            onClick={stop}
+            className="px-4 py-3 rounded bg-stone-800 text-stone-400 font-mono text-sm hover:bg-stone-700 hover:text-stone-200 transition-colors"
           >
             ■ Stop
           </button>

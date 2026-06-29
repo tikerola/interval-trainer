@@ -17,8 +17,8 @@ export interface CagedBox {
 const SHAPE_CONFIG: Record<CagedShape, { stringIdx: number; wsOff: number; weOff: number }> = {
   C: { stringIdx: 4, wsOff: -1, weOff: 3 }, // root on B string
   A: { stringIdx: 1, wsOff: -1, weOff: 3 }, // root on A string
-  G: { stringIdx: 0, wsOff: -4, weOff: 0 }, // root on low E
-  E: { stringIdx: 0, wsOff: -1, weOff: 2 }, // root on low E
+  G: { stringIdx: 0, wsOff: -3, weOff: 0 }, // root on low E
+  E: { stringIdx: 0, wsOff: -1, weOff: 3 }, // root on low E
   D: { stringIdx: 2, wsOff: -1, weOff: 3 }, // root on D string
 };
 

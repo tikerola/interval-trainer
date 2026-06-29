@@ -103,7 +103,7 @@ export function usePhraseBuilderEngine() {
 
     let cancelled = false;
     const state = usePhraseBuilderStore.getState();
-    const { key, bpm, mode, sections, notes, phraseGrid, recordPhase, cursorSlot } = state;
+    const { key, bpm, mode, sections, notes, phraseGrid, recordPhase, cursorSlot, playheadSlot } = state;
 
     const slotsPerBar  = SLOTS_PER_BAR[phraseGrid];
     const slotsPerBeat = SLOTS_PER_BEAT[phraseGrid];
@@ -114,8 +114,8 @@ export function usePhraseBuilderEngine() {
 
     const PRE_ROLL_BARS = recordPhase === "tapping" ? 1 : 0;
     const preRollSlots  = PRE_ROLL_BARS * slotsPerBar;
-    // Phrase starts at cursorSlot when tapping so user can record into any part of the phrase
-    const startSlot = recordPhase === "tapping" ? cursorSlot : 0;
+    // Tapping: start at cursor; paused resume: continue from playheadSlot; fresh start: 0.
+    const startSlot = recordPhase === "tapping" ? cursorSlot : playheadSlot;
 
     import("tone").then((Tone) => {
       if (cancelled) return;

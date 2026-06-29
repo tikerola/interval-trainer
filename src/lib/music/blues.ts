@@ -9,7 +9,7 @@ export type BluesRole = "root" | "third" | "fifth" | "seventh" | "blue3" | "blue
 const MAJ_PENT = SCALES.find((s) => s.name === "Maj Pent")!;
 const MIN_PENT = SCALES.find((s) => s.name === "Min Pent")!;
 
-function semitones(from: Note, to: Note): number {
+export function semitones(from: Note, to: Note): number {
   return ((NOTES.indexOf(to) - NOTES.indexOf(from) + 12) % 12 + 12) % 12;
 }
 

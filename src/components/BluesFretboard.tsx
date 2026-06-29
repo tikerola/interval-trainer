@@ -1,13 +1,15 @@
 "use client";
 
 import { useRef, useCallback } from "react";
-import { OPEN_STRINGS, NOTES, getNoteAtPosition, type Note } from "@/lib/music/notes";
+import { OPEN_STRINGS, NOTES, FRET_COUNT, getNoteAtPosition, type Note } from "@/lib/music/notes";
 import { getBluesNoteRole, type BluesRole } from "@/lib/music/blues";
 
-export const FRET_COUNT = 17;
+export { FRET_COUNT };
 const FRET_MARKERS = [3, 5, 7, 9, 12, 15, 17];
 const DOUBLE_MARKERS = [12];
 const DISPLAY_ORDER = [...Array(OPEN_STRINGS.length)].map((_, i) => OPEN_STRINGS.length - 1 - i);
+
+
 const STRING_HEIGHTS = [3.5, 3, 2.5, 2, 1.5, 1];
 const STRING_LABELS = ["E", "A", "D", "G", "B", "e"];
 const WOUND = new Set([0, 1, 2, 3]);
@@ -55,16 +57,43 @@ function getStringStyle(stringIndex: number, height: number): React.CSSPropertie
   };
 }
 
-function NoteDot({ role, label }: { role: BluesRole; label?: string }) {
+function NoteDot({ role, label, emphasize }: { role: BluesRole; label?: string; emphasize?: boolean }) {
   const s = ROLE_STYLES[role];
   return (
     <div
       className={`${s.size} rounded-full flex items-center justify-center`}
-      style={{ background: s.bg, border: s.ring }}
+      style={{
+        background: s.bg,
+        border: s.ring,
+        boxShadow: emphasize ? "0 0 0 2px #fbbf24, 0 0 12px rgba(251,191,36,0.75)" : undefined,
+      }}
     >
       <span className="text-[9px] font-bold select-none" style={{ color: s.text }}>
         {label ?? ROLE_LABEL[role]}
       </span>
+    </div>
+  );
+}
+
+// Blinking preview of the *next* chord's target tone, shown a bar ahead of the
+// change so the player can pre-position the hand. The amber dashed ring reads as
+// "coming up", distinct from the solid amber glow on the current target.
+function TargetPreviewDot({ label }: { label: string }) {
+  return (
+    <div className="relative w-6 h-6 flex items-center justify-center">
+      <div className="absolute w-6 h-6 rounded-full border-2 border-amber-300/70 animate-ping" />
+      <div
+        className="w-5 h-5 rounded-full flex items-center justify-center"
+        style={{
+          background: "rgba(251,191,36,0.2)",
+          border: "1.5px dashed #fbbf24",
+          boxShadow: "0 0 8px rgba(251,191,36,0.6)",
+        }}
+      >
+        <span className="text-[9px] font-bold select-none" style={{ color: "#fde68a" }}>
+          {label}
+        </span>
+      </div>
     </div>
   );
 }
@@ -81,13 +110,17 @@ function InlayDot() {
   );
 }
 
-const TRIAD_ROLES = new Set<BluesRole>(["root", "third", "fifth"]);
+const TRIAD_ROLES = new Set<BluesRole>(["root", "third", "fifth", "seventh"]);
 
-function ActiveNotePing() {
+// Double-stops (two strings sounding at once) get a cyan ring instead of amber,
+// so the pair reads as "played together" rather than two coincidental single notes.
+function ActiveNotePing({ isDoubleStop }: { isDoubleStop?: boolean }) {
+  const ringColor = isDoubleStop ? "border-cyan-300" : "border-amber-300";
+  const glow = isDoubleStop ? "shadow-[0_0_10px_rgba(103,232,249,0.85)]" : "shadow-[0_0_8px_rgba(255,255,255,0.9)]";
   return (
     <div className="relative w-6 h-6 flex items-center justify-center">
       <div className="absolute w-6 h-6 rounded-full bg-white/30 animate-ping" />
-      <div className="w-5 h-5 rounded-full bg-white border-2 border-amber-300 shadow-[0_0_8px_rgba(255,255,255,0.9)]" />
+      <div className={`w-5 h-5 rounded-full bg-white border-2 ${ringColor} ${glow}`} />
     </div>
   );
 }
@@ -117,8 +150,11 @@ function FretCell({
   keyNote,
   inRange,
   noteDisplay,
-  activeSoloNote,
+  activeSoloNotes,
   activeSoloNoteSecondary,
+  targetNotes,
+  targetPreviewNotes,
+  cagedDimmed,
   isRecording,
   onFretClick,
 }: {
@@ -128,8 +164,11 @@ function FretCell({
   keyNote: Note;
   inRange: boolean;
   noteDisplay: "triad" | "pentatonic";
-  activeSoloNote: { stringIndex: number; fretNumber: number } | null;
+  activeSoloNotes: { stringIndex: number; fretNumber: number }[];
   activeSoloNoteSecondary: { stringIndex: number; fretNumber: number; type: "bend" | "slide" } | null;
+  targetNotes: { stringIndex: number; fretNumber: number }[];
+  targetPreviewNotes: { stringIndex: number; fretNumber: number; label: string }[];
+  cagedDimmed: boolean; // true when fret is outside every selected CAGED box
   isRecording?: boolean;
   onFretClick?: () => void;
 }) {
@@ -137,8 +176,15 @@ function FretCell({
   const rawRole = inRange && chordNotes ? getBluesNoteRole(note, chordNotes, keyNote) : null;
   const role = rawRole && noteDisplay === "triad" && !TRIAD_ROLES.has(rawRole) ? null : rawRole;
   const pentLabel = (role === "majpent" || role === "minpent") ? getKeyDegree(note, keyNote) : undefined;
-  const isActive = activeSoloNote?.stringIndex === stringIndex && activeSoloNote?.fretNumber === fretNumber;
+  const isActive = activeSoloNotes.some((a) => a.stringIndex === stringIndex && a.fretNumber === fretNumber);
+  const isDoubleStop = isActive && activeSoloNotes.length > 1;
   const isSecondary = activeSoloNoteSecondary?.stringIndex === stringIndex && activeSoloNoteSecondary?.fretNumber === fretNumber;
+  const isTarget = targetNotes.some((t) => t.stringIndex === stringIndex && t.fretNumber === fretNumber);
+  const targetPreviewNote = targetPreviewNotes.find((t) => t.stringIndex === stringIndex && t.fretNumber === fretNumber);
+  const isTargetPreview = targetPreviewNote !== undefined;
+  // The current target is always a chord tone — show it (with emphasis) even in triad
+  // mode where the 7th would otherwise be hidden, so the target never vanishes.
+  const displayRole = isTarget ? rawRole : role;
 
   return (
     <div
@@ -148,7 +194,7 @@ function FretCell({
     >
       {isActive && (
         <div className="absolute z-40">
-          <ActiveNotePing />
+          <ActiveNotePing isDoubleStop={isDoubleStop} />
         </div>
       )}
       {isSecondary && !isActive && (
@@ -156,9 +202,14 @@ function FretCell({
           <ArticulationDot type={activeSoloNoteSecondary!.type} />
         </div>
       )}
-      {role && !isActive && !isSecondary && (
-        <div className="absolute z-30">
-          <NoteDot role={role} label={pentLabel} />
+      {isTargetPreview && !isActive && !isSecondary && (
+        <div className="absolute z-40">
+          <TargetPreviewDot label={targetPreviewNote!.label} />
+        </div>
+      )}
+      {displayRole && !isActive && !isSecondary && !isTargetPreview && (
+        <div className={`absolute z-30 transition-opacity duration-200 ${cagedDimmed && !isTarget ? "opacity-20" : "opacity-100"}`}>
+          <NoteDot role={displayRole} label={isTarget ? undefined : pentLabel} emphasize={isTarget} />
         </div>
       )}
     </div>
@@ -175,8 +226,13 @@ function StringRow({
   fretEnd,
   inStringRange,
   noteDisplay,
-  activeSoloNote,
+  activeSoloNotes,
   activeSoloNoteSecondary,
+  targetNotes,
+  targetPreviewNotes,
+  cagedBoxes,
+  isFocused,
+  onStringLabelClick,
   isRecording,
   onFretClick,
 }: {
@@ -189,8 +245,13 @@ function StringRow({
   fretEnd: number;
   inStringRange: boolean;
   noteDisplay: "triad" | "pentatonic";
-  activeSoloNote: { stringIndex: number; fretNumber: number } | null;
+  activeSoloNotes: { stringIndex: number; fretNumber: number }[];
   activeSoloNoteSecondary: { stringIndex: number; fretNumber: number; type: "bend" | "slide" } | null;
+  targetNotes: { stringIndex: number; fretNumber: number }[];
+  targetPreviewNotes: { stringIndex: number; fretNumber: number; label: string }[];
+  cagedBoxes: { start: number; end: number }[];
+  isFocused: boolean;
+  onStringLabelClick?: (stringIndex: number) => void;
   isRecording?: boolean;
   onFretClick?: (stringIndex: number, fretNumber: number) => void;
 }) {
@@ -199,25 +260,55 @@ function StringRow({
   const openInRange = inStringRange && fretStart === 0 && chordNotes !== null;
   const rawOpenRole = openInRange ? getBluesNoteRole(openNote, chordNotes!, keyNote) : null;
   const openRole = rawOpenRole && noteDisplay === "triad" && !TRIAD_ROLES.has(rawOpenRole) ? null : rawOpenRole;
+  const isOpenActive = activeSoloNotes.some((a) => a.stringIndex === stringIndex && a.fretNumber === 0);
+  const isOpenDoubleStop = isOpenActive && activeSoloNotes.length > 1;
+  const isOpenTarget = targetNotes.some((t) => t.stringIndex === stringIndex && t.fretNumber === 0);
+  const openTargetPreviewNote = targetPreviewNotes.find((t) => t.stringIndex === stringIndex && t.fretNumber === 0);
+  const isOpenTargetPreview = openTargetPreviewNote !== undefined;
+  const openDisplayRole = isOpenTarget ? rawOpenRole : openRole;
+  // Open string (fret 0) is dimmed when every selected box starts above fret 0.
+  const openCagedDimmed = cagedBoxes.length > 0 && cagedBoxes.every((b) => b.start > 0);
 
   return (
     <div
       className="relative flex items-center"
-      style={{ paddingTop: isFirst ? "8px" : "2px", paddingBottom: isLast ? "8px" : "2px" }}
+      style={{
+        paddingTop: isFirst ? "8px" : "2px",
+        paddingBottom: isLast ? "8px" : "2px",
+        opacity: isFocused ? 1 : 0.18,
+        transition: "opacity 0.2s",
+      }}
     >
       <div
-        className={`w-10 shrink-0 flex items-center justify-center z-40 transition-colors${isRecording ? " cursor-crosshair hover:bg-white/[0.05]" : ""}`}
-        onClick={isRecording ? () => onFretClick?.(stringIndex, 0) : undefined}
+        className={`w-10 shrink-0 flex items-center justify-center z-40 transition-colors ${
+          onStringLabelClick
+            ? "cursor-pointer hover:bg-white/[0.08] rounded-sm"
+            : isRecording
+              ? "cursor-crosshair hover:bg-white/[0.05]"
+              : ""
+        }`}
+        onClick={
+          onStringLabelClick
+            ? () => onStringLabelClick(stringIndex)
+            : isRecording
+              ? () => onFretClick?.(stringIndex, 0)
+              : undefined
+        }
       >
-        {activeSoloNote?.stringIndex === stringIndex && activeSoloNote?.fretNumber === 0 ? (
-          <ActiveNotePing />
+        {isOpenActive ? (
+          <ActiveNotePing isDoubleStop={isOpenDoubleStop} />
         ) : activeSoloNoteSecondary?.stringIndex === stringIndex && activeSoloNoteSecondary?.fretNumber === 0 ? (
           <ArticulationDot type={activeSoloNoteSecondary.type} />
-        ) : openRole ? (
-          <NoteDot
-            role={openRole}
-            label={(openRole === "majpent" || openRole === "minpent") ? getKeyDegree(openNote, keyNote) : undefined}
-          />
+        ) : isOpenTargetPreview ? (
+          <TargetPreviewDot label={openTargetPreviewNote!.label} />
+        ) : openDisplayRole ? (
+          <div className={`transition-opacity duration-200 ${openCagedDimmed && !isOpenTarget ? "opacity-20" : "opacity-100"}`}>
+            <NoteDot
+              role={openDisplayRole}
+              label={isOpenTarget ? undefined : (openDisplayRole === "majpent" || openDisplayRole === "minpent") ? getKeyDegree(openNote, keyNote) : undefined}
+              emphasize={isOpenTarget}
+            />
+          </div>
         ) : (
           <span className="text-xs text-amber-200/60 font-mono">{STRING_LABELS[stringIndex]}</span>
         )}
@@ -236,6 +327,8 @@ function StringRow({
         {Array.from({ length: FRET_COUNT }, (_, i) => {
           const fret = i + 1;
           const inRange = inStringRange && fret >= fretStart && fret <= fretEnd;
+          // Dim when every selected box excludes this fret (none selected = never dimmed).
+          const cagedDimmed = cagedBoxes.length > 0 && cagedBoxes.every((b) => fret < b.start || fret > b.end);
           return (
             <FretCell
               key={i}
@@ -245,8 +338,11 @@ function StringRow({
               keyNote={keyNote}
               inRange={inRange}
               noteDisplay={noteDisplay}
-              activeSoloNote={activeSoloNote}
+              activeSoloNotes={activeSoloNotes}
               activeSoloNoteSecondary={activeSoloNoteSecondary}
+              targetNotes={targetNotes}
+              targetPreviewNotes={targetPreviewNotes}
+              cagedDimmed={cagedDimmed}
               isRecording={isRecording}
               onFretClick={onFretClick ? () => onFretClick(stringIndex, fret) : undefined}
             />
@@ -265,8 +361,13 @@ export default function BluesFretboard({
   stringStart,
   stringEnd,
   noteDisplay,
-  activeSoloNote,
+  activeSoloNotes,
   activeSoloNoteSecondary,
+  targetNotes = [],
+  targetPreviewNotes = [],
+  cagedBoxes = [],
+  focusedStrings = [],
+  onStringLabelClick,
   onFretRangeChange,
   isRecording,
   onFretClick,
@@ -278,8 +379,13 @@ export default function BluesFretboard({
   stringStart: number;
   stringEnd: number;
   noteDisplay: "triad" | "pentatonic";
-  activeSoloNote: { stringIndex: number; fretNumber: number } | null;
+  activeSoloNotes: { stringIndex: number; fretNumber: number }[];
   activeSoloNoteSecondary: { stringIndex: number; fretNumber: number; type: "bend" | "slide" } | null;
+  targetNotes?: { stringIndex: number; fretNumber: number }[];
+  targetPreviewNotes?: { stringIndex: number; fretNumber: number; label: string }[];
+  cagedBoxes?: { start: number; end: number }[];
+  focusedStrings?: number[];
+  onStringLabelClick?: (stringIndex: number) => void;
   onFretRangeChange?: (start: number, end: number) => void;
   isRecording?: boolean;
   onFretClick?: (stringIndex: number, fretNumber: number) => void;
@@ -385,24 +491,32 @@ export default function BluesFretboard({
 
         {/* Strings */}
         <div className="relative z-20">
-          {DISPLAY_ORDER.map((stringIndex, displayPos) => (
-            <StringRow
-              key={stringIndex}
-              stringIndex={stringIndex}
-              isFirst={displayPos === 0}
-              isLast={displayPos === DISPLAY_ORDER.length - 1}
-              chordNotes={chordNotes}
-              keyNote={keyNote}
-              fretStart={fretStart}
-              fretEnd={fretEnd}
-              inStringRange={stringIndex >= stringStart && stringIndex <= stringEnd}
-              noteDisplay={noteDisplay}
-              activeSoloNote={activeSoloNote}
-              activeSoloNoteSecondary={activeSoloNoteSecondary}
-              isRecording={isRecording}
-              onFretClick={onFretClick}
-            />
-          ))}
+          {DISPLAY_ORDER.map((stringIndex, displayPos) => {
+            const isFocused = focusedStrings.length === 0 || focusedStrings.includes(stringIndex);
+            return (
+              <StringRow
+                key={stringIndex}
+                stringIndex={stringIndex}
+                isFirst={displayPos === 0}
+                isLast={displayPos === DISPLAY_ORDER.length - 1}
+                chordNotes={chordNotes}
+                keyNote={keyNote}
+                fretStart={fretStart}
+                fretEnd={fretEnd}
+                inStringRange={stringIndex >= stringStart && stringIndex <= stringEnd}
+                noteDisplay={noteDisplay}
+                activeSoloNotes={activeSoloNotes}
+                activeSoloNoteSecondary={activeSoloNoteSecondary}
+                targetNotes={targetNotes}
+                targetPreviewNotes={targetPreviewNotes}
+                cagedBoxes={cagedBoxes}
+                isFocused={isFocused}
+                onStringLabelClick={onStringLabelClick}
+                isRecording={isRecording}
+                onFretClick={onFretClick}
+              />
+            );
+          })}
         </div>
 
         {/* Fret wires */}
@@ -498,6 +612,30 @@ export default function BluesFretboard({
           >
             <div className="absolute inset-y-0 right-[5px] w-px bg-amber-400/25 group-hover:bg-amber-400/55 transition-colors" />
           </div>
+        </div>
+      )}
+
+      {/* CAGED box highlights — one sky-blue border per selected position */}
+      {cagedBoxes.length > 0 && (
+        <div className="absolute inset-0 pointer-events-none z-[35]">
+          {cagedBoxes.map((box, i) => (
+            <div
+              key={i}
+              className="absolute top-0 bottom-0 rounded-sm"
+              style={{
+                left: box.start === 0
+                  ? "0px"
+                  : `calc(40px + ${box.start - 1} / ${FRET_COUNT} * (100% - 40px))`,
+                width: box.start === 0
+                  ? `calc(40px + ${box.end} / ${FRET_COUNT} * (100% - 40px))`
+                  : `calc(${box.end - box.start + 1} / ${FRET_COUNT} * (100% - 40px))`,
+                border: "2px solid rgba(56,189,248,0.75)",
+                background: "rgba(56,189,248,0.04)",
+                boxShadow: "0 0 16px rgba(56,189,248,0.2)",
+                transition: "left 0.3s ease-out, width 0.3s ease-out",
+              }}
+            />
+          ))}
         </div>
       )}
 

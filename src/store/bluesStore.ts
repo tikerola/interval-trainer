@@ -1,12 +1,16 @@
 import { create } from "zustand";
-import type { Note } from "@/lib/music/notes";
+import { FRET_COUNT, type Note } from "@/lib/music/notes";
 import type { TranscribedSolo } from "@/lib/music/solos";
 import { SHUFFLE_IN_A_SOLO_1 } from "@/lib/music/solos/shuffleInA";
+import { transposeSolo } from "@/lib/music/solos/transpose";
 
 interface BluesState {
+  /** Canonical, untransposed source data — re-transposed from here on every key change. */
+  baseSolo: TranscribedSolo;
   solo: TranscribedSolo;
   bpm: number;
-  activeSoloNote: { stringIndex: number; fretNumber: number } | null;
+  // All notes currently sounding (more than one when the solo plays a double-stop).
+  activeSoloNotes: { stringIndex: number; fretNumber: number }[];
   // Secondary highlight: where a bend resolves to or where a slide is heading
   activeSoloNoteSecondary: { stringIndex: number; fretNumber: number; type: "bend" | "slide" } | null;
 
@@ -22,8 +26,9 @@ interface BluesState {
   playRange: { bar: number; loop: boolean } | null;
 
   loadSolo: (solo: TranscribedSolo) => void;
+  setKey: (key: Note) => void;
   setBpm: (bpm: number) => void;
-  setActiveSoloNote: (note: { stringIndex: number; fretNumber: number } | null) => void;
+  setActiveSoloNotes: (notes: { stringIndex: number; fretNumber: number }[]) => void;
   setActiveSoloNoteSecondary: (note: { stringIndex: number; fretNumber: number; type: "bend" | "slide" } | null) => void;
   setIsPlaying: (v: boolean) => void;
   setIsCountIn: (v: boolean) => void;
@@ -36,9 +41,10 @@ interface BluesState {
 }
 
 export const useBluesStore = create<BluesState>((set) => ({
+  baseSolo: SHUFFLE_IN_A_SOLO_1,
   solo: SHUFFLE_IN_A_SOLO_1,
   bpm: SHUFFLE_IN_A_SOLO_1.bpm,
-  activeSoloNote: null,
+  activeSoloNotes: [],
   activeSoloNoteSecondary: null,
 
   isPlaying: false,
@@ -48,9 +54,10 @@ export const useBluesStore = create<BluesState>((set) => ({
   currentBeat: 1,
   playRange: null,
 
-  loadSolo: (solo) => set({ solo, bpm: solo.bpm }),
+  loadSolo: (solo) => set({ baseSolo: solo, solo, bpm: solo.bpm }),
+  setKey: (key) => set((s) => ({ solo: transposeSolo(s.baseSolo, key, FRET_COUNT) })),
   setBpm: (bpm) => set({ bpm }),
-  setActiveSoloNote: (note) => set({ activeSoloNote: note }),
+  setActiveSoloNotes: (notes) => set({ activeSoloNotes: notes }),
   setActiveSoloNoteSecondary: (note) => set({ activeSoloNoteSecondary: note }),
   setIsPlaying: (v) => set({ isPlaying: v }),
   setIsCountIn: (v) => set({ isCountIn: v }),
@@ -59,5 +66,5 @@ export const useBluesStore = create<BluesState>((set) => ({
   setCurrentBeat: (beat) => set({ currentBeat: beat }),
   playFull: () => set({ playRange: null, isPlaying: true }),
   playBar: (bar, loop) => set({ playRange: { bar, loop }, isPlaying: true }),
-  stop: () => set({ isPlaying: false, isCountIn: false, countInBeat: 0, currentBar: 1, currentBeat: 1, activeSoloNote: null, activeSoloNoteSecondary: null, playRange: null }),
+  stop: () => set({ isPlaying: false, isCountIn: false, countInBeat: 0, currentBar: 1, currentBeat: 1, activeSoloNotes: [], activeSoloNoteSecondary: null, playRange: null }),
 }));

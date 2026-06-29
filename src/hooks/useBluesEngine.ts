@@ -19,23 +19,46 @@ function isLegatoFrom(prev: SoloNote, n: SoloNote): boolean {
   return prev.slideToNext === true || Math.abs(prevEnd - n.beatOffset) < 0.05;
 }
 
+// A bar's phrase is chronological across all strings, so a double-stop (two notes at
+// the same beatOffset on different strings) sits between a note and its actual
+// same-string neighbor. Slide targets and legato detection need the real same-string
+// neighbor, not just the adjacent array entry.
+function findNextSameString(phrase: SoloNote[], fromIdx: number, stringIndex: number): SoloNote | undefined {
+  for (let j = fromIdx + 1; j < phrase.length; j++) {
+    if (phrase[j].stringIndex === stringIndex) return phrase[j];
+  }
+  return undefined;
+}
+function findPrevSameString(phrase: SoloNote[], fromIdx: number, stringIndex: number): SoloNote | undefined {
+  for (let j = fromIdx - 1; j >= 0; j--) {
+    if (phrase[j].stringIndex === stringIndex) return phrase[j];
+  }
+  return undefined;
+}
+
 export function useBluesEngine() {
   const {
     bpm, isPlaying,
     setCurrentBar, setCurrentBeat,
-    setIsCountIn, setCountInBeat, setActiveSoloNote, setActiveSoloNoteSecondary, stop,
+    setIsCountIn, setCountInBeat, setActiveSoloNotes, setActiveSoloNoteSecondary, stop,
   } = useBluesStore();
 
   const synthsRef = useRef<{
     chord:       import("tone").PolySynth | null;
     click:       import("tone").MembraneSynth | null;
     solo:        import("tone").FMSynth | null;   // used for bend/slide (needs frequency ramp)
+    solo2:       import("tone").FMSynth | null;   // second voice — for a double-stop bend/slide simultaneous with the first
     soloSampler: import("tone").Sampler | null;   // used for plain notes (real guitar samples)
     reverb:      import("tone").Reverb | null;
     soloFx:      import("tone").Reverb | null;
     soloDist:    import("tone").Distortion | null;
     soloEq:      import("tone").EQ3 | null;
-  }>({ chord: null, click: null, solo: null, soloSampler: null, reverb: null, soloFx: null, soloDist: null, soloEq: null });
+  }>({ chord: null, click: null, solo: null, solo2: null, soloSampler: null, reverb: null, soloFx: null, soloDist: null, soloEq: null });
+
+  // Tracks the last note-time scheduled on each bend/slide voice, so a second
+  // bend/slide that lands at the exact same time (a double-stop slide) gets
+  // routed to the other voice instead of colliding on the same monophonic synth.
+  const lastBendSlideTimeRef = useRef<{ solo: number; solo2: number }>({ solo: -1, solo2: -1 });
 
   // Flipped to true by the sampler's onload callback
   const samplerLoadedRef = useRef(false);
@@ -97,7 +120,7 @@ export function useBluesEngine() {
       // The modulator envelope decays to zero sustain — this makes the FM
       // harmonics strongest at the pick attack then fade to a cleaner tone,
       // which is exactly how a plucked string behaves.
-      const solo = new Tone.FMSynth({
+      const soloVoiceSettings = {
         harmonicity: 3.01,
         modulationIndex: 12,
         oscillator: { type: "triangle" as const },
@@ -105,8 +128,11 @@ export function useBluesEngine() {
         modulation: { type: "square" as const },
         modulationEnvelope: { attack: 0.001, decay: 0.08, sustain: 0.0, release: 0.2 },
         volume: -5,
-      });
+      };
+      const solo = new Tone.FMSynth(soloVoiceSettings);
       solo.connect(soloDist);
+      const solo2 = new Tone.FMSynth(soloVoiceSettings);
+      solo2.connect(soloDist);
 
       // Sampler with real electric-guitar samples for plain notes.
       // Falls back silently to FMSynth until all buffers finish loading.
@@ -124,7 +150,7 @@ export function useBluesEngine() {
       });
       soloSampler.connect(soloDist);
 
-      synthsRef.current = { chord, click, solo, soloSampler, reverb, soloFx, soloDist, soloEq };
+      synthsRef.current = { chord, click, solo, solo2, soloSampler, reverb, soloFx, soloDist, soloEq };
     });
 
     return () => {
@@ -132,13 +158,14 @@ export function useBluesEngine() {
       synthsRef.current.chord?.dispose();
       synthsRef.current.click?.dispose();
       synthsRef.current.solo?.dispose();
+      synthsRef.current.solo2?.dispose();
       synthsRef.current.soloSampler?.dispose();
       synthsRef.current.reverb?.dispose();
       synthsRef.current.soloFx?.dispose();
       synthsRef.current.soloDist?.dispose();
       synthsRef.current.soloEq?.dispose();
       samplerLoadedRef.current = false;
-      synthsRef.current = { chord: null, click: null, solo: null, soloSampler: null, reverb: null, soloFx: null, soloDist: null, soloEq: null };
+      synthsRef.current = { chord: null, click: null, solo: null, solo2: null, soloSampler: null, reverb: null, soloFx: null, soloDist: null, soloEq: null };
     };
   }, []);
 
@@ -162,10 +189,13 @@ export function useBluesEngine() {
       let beatIndex = playRangeRef.current ? 0 : -4; // -4..-1 = count-in; bars from the tab jump in immediately
       let activeRangeKey = rangeKey(playRangeRef.current);
       skipNextBarRef.current = false;
+      // Stale times from a previous play session would otherwise look like a same-instant
+      // collision (or a guaranteed "free" voice) against this session's own time-0-based clock.
+      lastBendSlideTimeRef.current = { solo: -1, solo2: -1 };
 
       const id = transport.scheduleRepeat((time) => {
         try {
-          const { chord: chordSynth, click: clickSynth, solo: soloSynth, soloSampler } = synthsRef.current;
+          const { chord: chordSynth, click: clickSynth, solo: soloSynth, solo2: soloSynth2, soloSampler } = synthsRef.current;
           const range = playRangeRef.current;
 
           // The user switched which bar to play (or between a bar and the full solo) —
@@ -243,58 +273,87 @@ export function useBluesEngine() {
                   const noteDurSec = Tone.Time(n.duration).toSeconds();
                   // Legato notes (hammer-on/pull-off, or a slide's landing note) weren't
                   // freshly picked — play them noticeably softer than a real pick attack.
-                  const velocity = idx > 0 && isLegatoFrom(phrase[idx - 1], n) ? 0.4 : 0.7;
+                  const prevSameString = findPrevSameString(phrase, idx, n.stringIndex);
+                  const velocity = prevSameString && isLegatoFrom(prevSameString, n) ? 0.4 : 0.7;
 
-                  if (n.bend && soloSynth) {
+                  // A grace note (or any tightly-spaced note) can have a notated duration
+                  // longer than the real gap before the next note on the same string —
+                  // a string can't ring two notes at once, so clamp to that gap. This also
+                  // keeps Tone.js's per-synth automation timeline strictly increasing.
+                  const nextSameString = findNextSameString(phrase, idx, n.stringIndex);
+                  const gapSec = nextSameString ? (nextSameString.beatOffset - n.beatOffset) * secondsPerBeat : Infinity;
+                  const effectiveDurSec = Math.max(0.02, Math.min(noteDurSec, gapSec - 0.01));
+
+                  // A double-stop is two notes at the same beatOffset (different strings) —
+                  // light up all of them together, not just whichever's draw call lands last.
+                  const simultaneousNotes = phrase
+                    .filter((p) => p.beatOffset === n.beatOffset)
+                    .map((p) => ({ stringIndex: p.stringIndex, fretNumber: p.fretNumber }));
+
+                  const sampler = samplerLoadedRef.current ? soloSampler : null;
+                  // Anything not going through the (polyphonic) sampler needs a synth voice.
+                  // A double-stop (two strings, same instant) needs its own voice — picking
+                  // whichever voice's last note didn't land at this exact time.
+                  let bendSlideSynth: typeof soloSynth = null;
+                  if (!sampler || n.bend || n.slideToNext) {
+                    const bendSlideTimes = lastBendSlideTimeRef.current;
+                    const useVoice2 = bendSlideTimes.solo === noteTime;
+                    bendSlideSynth = useVoice2 ? soloSynth2 : soloSynth;
+                    if (useVoice2) bendSlideTimes.solo2 = noteTime;
+                    else bendSlideTimes.solo = noteTime;
+                  }
+
+                  if (n.bend && bendSlideSynth) {
                     // Play note then ramp pitch upward — guitar bend effect.
                     const startHz = midiToHz(OPEN_MIDI[n.stringIndex] + n.fretNumber);
                     const endHz   = startHz * Math.pow(2, n.bend / 12);
-                    soloSynth.triggerAttack(`${n.note}${n.octave}`, noteTime, velocity);
-                    soloSynth.frequency.linearRampToValueAtTime(endHz, noteTime + noteDurSec * 0.65);
-                    soloSynth.triggerRelease(noteTime + noteDurSec);
+                    bendSlideSynth.triggerAttack(`${n.note}${n.octave}`, noteTime, velocity);
+                    bendSlideSynth.frequency.linearRampToValueAtTime(endHz, noteTime + effectiveDurSec * 0.65);
+                    bendSlideSynth.triggerRelease(noteTime + effectiveDurSec);
 
                     // Show the source fret immediately, then light up the bend target
                     // fret (same string, +bend semitones) at 40% through so it appears
                     // as the pitch "arrives" at its destination.
                     Tone.getDraw().schedule(() => {
                       if (cancelled) return;
-                      setActiveSoloNote({ stringIndex: n.stringIndex, fretNumber: n.fretNumber });
+                      setActiveSoloNotes(simultaneousNotes);
                       setActiveSoloNoteSecondary({
                         stringIndex: n.stringIndex,
                         fretNumber:  n.fretNumber + n.bend!,
                         type: "bend",
                       });
-                    }, noteTime + noteDurSec * 0.4);
+                    }, noteTime + effectiveDurSec * 0.4);
 
-                  } else if (n.slideToNext && idx < phrase.length - 1 && soloSynth) {
+                  } else if (n.slideToNext && bendSlideSynth && nextSameString) {
                     // Slide: attack this note, ramp frequency toward next note's pitch.
-                    const next  = phrase[idx + 1];
-                    const endHz = midiToHz(OPEN_MIDI[next.stringIndex] + next.fretNumber);
-                    soloSynth.triggerAttack(`${n.note}${n.octave}`, noteTime, velocity);
-                    soloSynth.frequency.linearRampToValueAtTime(endHz, noteTime + noteDurSec);
-                    soloSynth.triggerRelease(noteTime + noteDurSec);
+                    const endHz = midiToHz(OPEN_MIDI[nextSameString.stringIndex] + nextSameString.fretNumber);
+                    bendSlideSynth.triggerAttack(`${n.note}${n.octave}`, noteTime, velocity);
+                    bendSlideSynth.frequency.linearRampToValueAtTime(endHz, noteTime + effectiveDurSec);
+                    bendSlideSynth.triggerRelease(noteTime + effectiveDurSec);
 
                     // Show both source and destination immediately so the player
                     // can see where the slide is heading.
                     Tone.getDraw().schedule(() => {
                       if (cancelled) return;
                       setActiveSoloNoteSecondary({
-                        stringIndex: next.stringIndex,
-                        fretNumber:  next.fretNumber,
+                        stringIndex: nextSameString.stringIndex,
+                        fretNumber:  nextSameString.fretNumber,
                         type: "slide",
                       });
                     }, noteTime);
 
+                  } else if (sampler) {
+                    // Route plain notes through the sampler (real guitar samples) once it
+                    // has finished loading — polyphonic, so no clamping needed here.
+                    sampler.triggerAttackRelease(`${n.note}${n.octave}`, n.duration, noteTime, velocity);
                   } else {
-                    // Route plain notes through the sampler (real guitar samples)
-                    // once it has finished loading; fall back to FMSynth until then.
-                    const player = samplerLoadedRef.current && soloSampler ? soloSampler : soloSynth;
-                    player?.triggerAttackRelease(`${n.note}${n.octave}`, n.duration, noteTime, velocity);
+                    // Sampler not loaded yet — fall back to the (monophonic) synth voice.
+                    bendSlideSynth?.triggerAttackRelease(`${n.note}${n.octave}`, effectiveDurSec, noteTime, velocity);
                   }
 
                   Tone.getDraw().schedule(() => {
                     if (cancelled) return;
-                    setActiveSoloNote({ stringIndex: n.stringIndex, fretNumber: n.fretNumber });
+                    setActiveSoloNotes(simultaneousNotes);
                     // Clear secondary when a plain note plays (new phrase)
                     if (!n.bend && !n.slideToNext) setActiveSoloNoteSecondary(null);
                   }, noteTime);
@@ -305,7 +364,7 @@ export function useBluesEngine() {
                 if (!spansNextBar) {
                   Tone.getDraw().schedule(() => {
                     if (cancelled) return;
-                    setActiveSoloNote(null);
+                    setActiveSoloNotes([]);
                     setActiveSoloNoteSecondary(null);
                   }, time + 4 * secondsPerBeat - 0.05);
                 } else if (phrase.length > 0) {
@@ -314,7 +373,7 @@ export function useBluesEngine() {
                     + Tone.Time(lastN.duration).toSeconds() + 0.1;
                   Tone.getDraw().schedule(() => {
                     if (cancelled) return;
-                    setActiveSoloNote(null);
+                    setActiveSoloNotes([]);
                     setActiveSoloNoteSecondary(null);
                   }, clearAt);
                 }
