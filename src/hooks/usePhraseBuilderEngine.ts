@@ -117,6 +117,10 @@ export function usePhraseBuilderEngine() {
     // Tapping: start at cursor; paused resume: continue from playheadSlot; fresh start: 0.
     const startSlot = recordPhase === "tapping" ? cursorSlot : playheadSlot;
 
+    // Pre-compute chord-change boundaries (section start slots) once; used for bullet time.
+    const sectionStarts: number[] = [];
+    { let acc = 0; for (const sec of sections) { sectionStarts.push(acc); acc += sec.bars * slotsPerBar; } }
+
     import("tone").then((Tone) => {
       if (cancelled) return;
 
@@ -133,6 +137,26 @@ export function usePhraseBuilderEngine() {
         const currentSlot = isPreRoll
           ? absoluteSlot  // 0…slotsPerBar-1, used for beat/bar detection
           : (absoluteSlot - preRollSlots + startSlot) % totalSlots;
+
+        // Bullet time: ramp BPM down over the last bar before each chord change.
+        // Read live from store so toggling during playback takes effect immediately.
+        if (mode === "jam" && !isPreRoll) {
+          const { jamBulletTime, jamBulletTimeStrength } = usePhraseBuilderStore.getState();
+          if (jamBulletTime) {
+            const nextBoundary = sectionStarts.find((s) => s > currentSlot) ?? totalSlots;
+            const slotsToChange = nextBoundary - currentSlot;
+            const windowSlots = slotsPerBar;
+            if (slotsToChange > 0 && slotsToChange <= windowSlots) {
+              const t = slotsToChange / windowSlots; // 1 at window start → 0 at change
+              const minFactor = 1 - jamBulletTimeStrength;
+              transport.bpm.value = bpm * (minFactor + (1 - minFactor) * t * t);
+            } else {
+              transport.bpm.value = bpm;
+            }
+          } else {
+            transport.bpm.value = bpm;
+          }
+        }
 
         // Click on every beat
         if (currentSlot % slotsPerBeat === 0) {

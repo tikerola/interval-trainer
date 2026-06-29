@@ -101,11 +101,15 @@ interface PhraseBuilderState {
 
   jamCagedShapes: CagedShape[]; // empty = no position overlay
   jamFocusedStrings: number[]; // empty = all strings focused
+  jamBulletTime: boolean;
+  jamBulletTimeStrength: number; // 0–1; fraction of BPM removed at peak slowdown
 
   toggleJamCagedShape: (shape: CagedShape) => void;
   setJamCagedShapes: (shapes: CagedShape[]) => void;
   toggleJamFocusedString: (stringIndex: number) => void;
   clearJamFocusedStrings: () => void;
+  setJamBulletTime: (v: boolean) => void;
+  setJamBulletTimeStrength: (v: number) => void;
 
   setKey: (key: Note) => void;
   setBpm: (bpm: number) => void;
@@ -159,7 +163,11 @@ export const usePhraseBuilderStore = create<PhraseBuilderState>((set) => ({
 
   jamCagedShapes: [],
   jamFocusedStrings: [],
+  jamBulletTime: false,
+  jamBulletTimeStrength: 0.5,
 
+  setJamBulletTime: (jamBulletTime) => set({ jamBulletTime }),
+  setJamBulletTimeStrength: (jamBulletTimeStrength) => set({ jamBulletTimeStrength }),
   toggleJamCagedShape: (shape) => set((s) => ({
     jamCagedShapes: s.jamCagedShapes.includes(shape)
       ? s.jamCagedShapes.filter((sh) => sh !== shape)

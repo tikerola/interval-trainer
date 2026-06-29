@@ -237,13 +237,14 @@ export default function BluesTrainer() {
     key, bpm, mode, phraseGrid, sections, notes, selectedDuration,
     cursorSlot, fretStart, fretEnd, isPlaying, playheadSlot,
     activePhraseNote, recordPhase, pendingSlots, tapPreRollBar,
-    jamCagedShapes, jamFocusedStrings,
+    jamCagedShapes, jamFocusedStrings, jamBulletTime, jamBulletTimeStrength,
     setKey, setMode, setGrid, addSection, removeSection, updateSection, setSections,
     setSelectedDuration, setCursorSlot, setFretRange,
     placeNote, removeNote, updateNote, updateNotes, clearNotes,
     setIsPlaying, pause, stop,
     setRecordPhase, addPendingSlot, clearPendingSlots, promotePendingSlot, setTapPreRollBar,
     toggleJamCagedShape, setJamCagedShapes, toggleJamFocusedString, clearJamFocusedStrings,
+    setJamBulletTime, setJamBulletTimeStrength,
   } = usePhraseBuilderStore();
 
   const soloIsPlaying = useBluesStore((s) => s.isPlaying);
@@ -640,6 +641,36 @@ export default function BluesTrainer() {
                   : "next target blinks before each change"}
               </span>
             </>
+          )}
+        </div>
+      )}
+
+      {/* ── Jam: bullet time ── */}
+      {mode === "jam" && (
+        <div className="flex flex-wrap items-center gap-3 px-1">
+          <span className="text-xs text-stone-400 uppercase tracking-widest font-mono">Bullet Time</span>
+          <button
+            onClick={() => setJamBulletTime(!jamBulletTime)}
+            className={`px-3 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
+              jamBulletTime ? "bg-fuchsia-500/80 text-white font-bold" : "bg-stone-800 text-stone-300 hover:bg-stone-700"
+            }`}
+          >
+            {jamBulletTime ? "● On" : "○ Off"}
+          </button>
+          {jamBulletTime && (
+            <div className="flex gap-1">
+              {([["Light", 0.3], ["Medium", 0.5], ["Heavy", 0.75]] as [string, number][]).map(([label, v]) => (
+                <button
+                  key={label}
+                  onClick={() => setJamBulletTimeStrength(v)}
+                  className={`px-2.5 py-1.5 rounded font-mono text-xs transition-all duration-150 ${
+                    jamBulletTimeStrength === v
+                      ? "bg-fuchsia-500/60 text-white font-bold"
+                      : "bg-stone-800 text-stone-400 hover:bg-stone-700"
+                  }`}
+                >{label}</button>
+              ))}
+            </div>
           )}
         </div>
       )}
