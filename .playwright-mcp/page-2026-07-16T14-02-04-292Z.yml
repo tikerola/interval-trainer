@@ -1,0 +1,376 @@
+- main [ref=e2]:
+  - heading "Guitar Trainer" [level=1] [ref=e4]
+  - generic [ref=e5]:
+    - button "Interval Trainer" [ref=e6] [cursor=pointer]
+    - button "Triad Map" [ref=e7] [cursor=pointer]
+    - button "Blues Trainer" [ref=e8] [cursor=pointer]
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - generic [ref=e11]: "1"
+      - generic [ref=e12]: "2"
+      - generic [ref=e13]: "3"
+      - generic [ref=e14]: "4"
+      - generic [ref=e15]: "5"
+      - generic [ref=e16]: "6"
+      - generic [ref=e17]: "7"
+      - generic [ref=e18]: "8"
+      - generic [ref=e19]: "9"
+      - generic [ref=e20]: "10"
+      - generic [ref=e21]: "11"
+      - generic [ref=e22]: "12"
+      - generic [ref=e23]: "13"
+      - generic [ref=e24]: "14"
+      - generic [ref=e25]: "15"
+    - generic [ref=e28]:
+      - generic [ref=e29]:
+        - generic [ref=e30]: e
+        - generic [ref=e31]:
+          - generic [ref=e32] [cursor=pointer]:
+            - generic: F
+            - generic [ref=e34]: F
+          - generic [ref=e36] [cursor=pointer]:
+            - generic: F#
+            - generic [ref=e38]: F#
+          - generic [ref=e40] [cursor=pointer]:
+            - generic: G
+            - generic [ref=e42]: G
+          - generic [ref=e44] [cursor=pointer]:
+            - generic: G#
+            - generic [ref=e46]: G#
+          - generic [ref=e48] [cursor=pointer]:
+            - generic: A
+            - generic [ref=e50]: A
+          - generic [ref=e52] [cursor=pointer]:
+            - generic: A#
+            - generic [ref=e54]: A#
+          - generic [ref=e56] [cursor=pointer]:
+            - generic: B
+            - generic [ref=e58]: B
+          - generic [ref=e60] [cursor=pointer]:
+            - generic: C
+            - generic [ref=e62]: C
+          - generic [ref=e64] [cursor=pointer]:
+            - generic: C#
+            - generic [ref=e66]: C#
+          - generic [ref=e68] [cursor=pointer]:
+            - generic: D
+            - generic [ref=e70]: D
+          - generic [ref=e72] [cursor=pointer]:
+            - generic: D#
+            - generic [ref=e74]: D#
+          - generic [ref=e76] [cursor=pointer]:
+            - generic: E
+            - generic [ref=e78]: E
+          - generic [ref=e80] [cursor=pointer]:
+            - generic: F
+            - generic [ref=e82]: F
+          - generic [ref=e84] [cursor=pointer]:
+            - generic: F#
+            - generic [ref=e86]: F#
+          - generic [ref=e88] [cursor=pointer]:
+            - generic: G
+            - generic [ref=e90]: G
+      - generic [ref=e92]:
+        - generic [ref=e93]: B
+        - generic [ref=e94]:
+          - generic [ref=e95] [cursor=pointer]:
+            - generic: C
+            - generic [ref=e97]: C
+          - generic [ref=e99] [cursor=pointer]:
+            - generic: C#
+            - generic [ref=e101]: C#
+          - generic [ref=e103] [cursor=pointer]:
+            - generic: D
+            - generic [ref=e105]: D
+          - generic [ref=e107] [cursor=pointer]:
+            - generic: D#
+            - generic [ref=e109]: D#
+          - generic [ref=e111] [cursor=pointer]:
+            - generic: E
+            - generic [ref=e113]: E
+          - generic [ref=e115] [cursor=pointer]:
+            - generic: F
+            - generic [ref=e117]: F
+          - generic [ref=e119] [cursor=pointer]:
+            - generic: F#
+            - generic [ref=e121]: F#
+          - generic [ref=e123] [cursor=pointer]:
+            - generic: G
+            - generic [ref=e125]: G
+          - generic [ref=e127] [cursor=pointer]:
+            - generic: G#
+            - generic [ref=e129]: G#
+          - generic [ref=e131] [cursor=pointer]:
+            - generic: A
+            - generic [ref=e133]: A
+          - generic [ref=e135] [cursor=pointer]:
+            - generic: A#
+            - generic [ref=e137]: A#
+          - generic [ref=e139] [cursor=pointer]:
+            - generic: B
+            - generic [ref=e141]: B
+          - generic [ref=e143] [cursor=pointer]:
+            - generic: C
+            - generic [ref=e145]: C
+          - generic [ref=e147] [cursor=pointer]:
+            - generic: C#
+            - generic [ref=e149]: C#
+          - generic [ref=e151] [cursor=pointer]:
+            - generic: D
+            - generic [ref=e153]: D
+      - generic [ref=e155]:
+        - generic [ref=e156]: G
+        - generic [ref=e157]:
+          - generic [ref=e158] [cursor=pointer]:
+            - generic: G#
+            - generic [ref=e160]: G#
+          - generic [ref=e162] [cursor=pointer]:
+            - generic: A
+            - generic [ref=e164]: A
+          - generic [ref=e166] [cursor=pointer]:
+            - generic: A#
+            - generic [ref=e168]: A#
+          - generic [ref=e170] [cursor=pointer]:
+            - generic: B
+            - generic [ref=e172]: B
+          - generic [ref=e174] [cursor=pointer]:
+            - generic: C
+            - generic [ref=e176]: C
+          - generic [ref=e178] [cursor=pointer]:
+            - generic: C#
+            - generic [ref=e180]: C#
+          - generic [ref=e182] [cursor=pointer]:
+            - generic: D
+            - generic [ref=e184]: D
+          - generic [ref=e186] [cursor=pointer]:
+            - generic: D#
+            - generic [ref=e188]: D#
+          - generic [ref=e190] [cursor=pointer]:
+            - generic: E
+            - generic [ref=e192]: E
+          - generic [ref=e194] [cursor=pointer]:
+            - generic: F
+            - generic [ref=e196]: F
+          - generic [ref=e198] [cursor=pointer]:
+            - generic: F#
+            - generic [ref=e200]: F#
+          - generic [ref=e202] [cursor=pointer]:
+            - generic: G
+            - generic [ref=e204]: G
+          - generic [ref=e206] [cursor=pointer]:
+            - generic: G#
+            - generic [ref=e208]: G#
+          - generic [ref=e210] [cursor=pointer]:
+            - generic: A
+            - generic [ref=e212]: A
+          - generic [ref=e214] [cursor=pointer]:
+            - generic: A#
+            - generic [ref=e216]: A#
+      - generic [ref=e218]:
+        - generic [ref=e219]: D
+        - generic [ref=e220]:
+          - generic [ref=e221] [cursor=pointer]:
+            - generic: D#
+            - generic [ref=e223]: D#
+          - generic [ref=e225] [cursor=pointer]:
+            - generic: E
+            - generic [ref=e227]: E
+          - generic [ref=e229] [cursor=pointer]:
+            - generic: F
+            - generic [ref=e231]: F
+          - generic [ref=e233] [cursor=pointer]:
+            - generic: F#
+            - generic [ref=e235]: F#
+          - generic [ref=e237] [cursor=pointer]:
+            - generic: G
+            - generic [ref=e239]: G
+          - generic [ref=e241] [cursor=pointer]:
+            - generic: G#
+            - generic [ref=e243]: G#
+          - generic [ref=e245] [cursor=pointer]:
+            - generic: A
+            - generic [ref=e247]: A
+          - generic [ref=e249] [cursor=pointer]:
+            - generic: A#
+            - generic [ref=e251]: A#
+          - generic [ref=e253] [cursor=pointer]:
+            - generic: B
+            - generic [ref=e255]: B
+          - generic [ref=e257] [cursor=pointer]:
+            - generic: C
+            - generic [ref=e259]: C
+          - generic [ref=e261] [cursor=pointer]:
+            - generic: C#
+            - generic [ref=e263]: C#
+          - generic [ref=e265] [cursor=pointer]:
+            - generic: D
+            - generic [ref=e267]: D
+          - generic [ref=e269] [cursor=pointer]:
+            - generic: D#
+            - generic [ref=e271]: D#
+          - generic [ref=e273] [cursor=pointer]:
+            - generic: E
+            - generic [ref=e275]: E
+          - generic [ref=e277] [cursor=pointer]:
+            - generic: F
+            - generic [ref=e279]: F
+      - generic [ref=e281]:
+        - generic [ref=e282]: A
+        - generic [ref=e283]:
+          - generic [ref=e284] [cursor=pointer]:
+            - generic: A#
+            - generic [ref=e286]: A#
+          - generic [ref=e288] [cursor=pointer]:
+            - generic: B
+            - generic [ref=e290]: B
+          - generic [ref=e292] [cursor=pointer]:
+            - generic: C
+            - generic [ref=e294]: C
+          - generic [ref=e296] [cursor=pointer]:
+            - generic: C#
+            - generic [ref=e298]: C#
+          - generic [ref=e300] [cursor=pointer]:
+            - generic: D
+            - generic [ref=e302]: D
+          - generic [ref=e304] [cursor=pointer]:
+            - generic: D#
+            - generic [ref=e306]: D#
+          - generic [ref=e308] [cursor=pointer]:
+            - generic: E
+            - generic [ref=e310]: E
+          - generic [ref=e312] [cursor=pointer]:
+            - generic: F
+            - generic [ref=e314]: F
+          - generic [ref=e316] [cursor=pointer]:
+            - generic: F#
+            - generic [ref=e318]: F#
+          - generic [ref=e320] [cursor=pointer]:
+            - generic: G
+            - generic [ref=e322]: G
+          - generic [ref=e324] [cursor=pointer]:
+            - generic: G#
+            - generic [ref=e326]: G#
+          - generic [ref=e328] [cursor=pointer]:
+            - generic: A
+            - generic [ref=e330]: A
+          - generic [ref=e332] [cursor=pointer]:
+            - generic: A#
+            - generic [ref=e334]: A#
+          - generic [ref=e336] [cursor=pointer]:
+            - generic: B
+            - generic [ref=e338]: B
+          - generic [ref=e340] [cursor=pointer]:
+            - generic: C
+            - generic [ref=e342]: C
+      - generic [ref=e344]:
+        - generic [ref=e345]: E
+        - generic [ref=e346]:
+          - generic [ref=e347] [cursor=pointer]:
+            - generic: F
+            - generic [ref=e349]: F
+          - generic [ref=e351] [cursor=pointer]:
+            - generic: F#
+            - generic [ref=e353]: F#
+          - generic [ref=e355] [cursor=pointer]:
+            - generic: G
+            - generic [ref=e357]: G
+          - generic [ref=e359] [cursor=pointer]:
+            - generic: G#
+            - generic [ref=e361]: G#
+          - generic [ref=e363] [cursor=pointer]:
+            - generic: A
+            - generic [ref=e365]: A
+          - generic [ref=e367] [cursor=pointer]:
+            - generic: A#
+            - generic [ref=e369]: A#
+          - generic [ref=e371] [cursor=pointer]:
+            - generic: B
+            - generic [ref=e373]: B
+          - generic [ref=e375] [cursor=pointer]:
+            - generic: C
+            - generic [ref=e377]: C
+          - generic [ref=e379] [cursor=pointer]:
+            - generic: C#
+            - generic [ref=e381]: C#
+          - generic [ref=e383] [cursor=pointer]:
+            - generic: D
+            - generic [ref=e385]: D
+          - generic [ref=e387] [cursor=pointer]:
+            - generic: D#
+            - generic [ref=e389]: D#
+          - generic [ref=e391] [cursor=pointer]:
+            - generic: E
+            - generic [ref=e393]: E
+          - generic [ref=e395] [cursor=pointer]:
+            - generic: F
+            - generic [ref=e397]: F
+          - generic [ref=e399] [cursor=pointer]:
+            - generic: F#
+            - generic [ref=e401]: F#
+          - generic [ref=e403] [cursor=pointer]:
+            - generic: G
+            - generic [ref=e405]: G
+    - generic [ref=e407]:
+      - generic [ref=e410]: "3"
+      - generic [ref=e412]: "5"
+      - generic [ref=e414]: "7"
+      - generic [ref=e416]: "9"
+      - generic [ref=e419]: "12"
+      - generic [ref=e422]: "15"
+  - generic [ref=e423]:
+    - generic [ref=e424]:
+      - button "Practice" [ref=e425] [cursor=pointer]
+      - button "Ear Training" [ref=e426] [cursor=pointer]
+    - generic [ref=e427]:
+      - heading "Interval Trainer" [level=2] [ref=e428]
+      - generic [ref=e429]:
+        - generic [ref=e430]:
+          - generic [ref=e431]: Root Note
+          - combobox [ref=e432] [cursor=pointer]:
+            - option "C" [selected]
+            - option "C#"
+            - option "D"
+            - option "D#"
+            - option "E"
+            - option "F"
+            - option "F#"
+            - option "G"
+            - option "G#"
+            - option "A"
+            - option "A#"
+            - option "B"
+        - generic [ref=e433]:
+          - generic [ref=e434]: Interval
+          - combobox [ref=e435] [cursor=pointer]:
+            - option "Minor 2nd"
+            - option "Major 2nd"
+            - option "Minor 3rd"
+            - option "Major 3rd"
+            - option "Perfect 4th"
+            - option "Tritone"
+            - option "Perfect 5th" [selected]
+            - option "Minor 6th"
+            - option "Major 6th"
+            - option "Minor 7th"
+            - option "Major 7th"
+            - option "Octave"
+        - generic [ref=e436]:
+          - generic [ref=e437]: Target Note
+          - generic [ref=e438]:
+            - generic [ref=e439]: G
+            - button "show" [ref=e440] [cursor=pointer]
+        - generic [ref=e441]:
+          - generic [ref=e442]: Area Width
+          - combobox [ref=e443] [cursor=pointer]:
+            - option "3 frets"
+            - option "4 frets" [selected]
+            - option "5 frets"
+            - option "6 frets"
+        - generic [ref=e444]:
+          - generic [ref=e445]: Duration
+          - combobox [ref=e446] [cursor=pointer]:
+            - option "1 min"
+            - option "2 min" [selected]
+            - option "3 min"
+            - option "5 min"
+        - button "Start Exercise" [ref=e447] [cursor=pointer]

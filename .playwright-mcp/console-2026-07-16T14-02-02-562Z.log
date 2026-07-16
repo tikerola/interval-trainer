@@ -1,0 +1,11 @@
+[    1529ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js:25630
+[    1722ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3210/favicon.ico:0
+[   12092ms] [LOG] %c * Tone.js v15.1.22 *  background: #000; color: #fff @ webpack-internal:///(app-pages-browser)/./node_modules/tone/build/esm/core/Global.js:83
+[   12544ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://nbrosowsky.github.io/tonejs-instruments/samples/guitar-electric/D3.mp3:0
+[   12577ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://nbrosowsky.github.io/tonejs-instruments/samples/guitar-electric/G3.mp3:0
+[   12599ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://nbrosowsky.github.io/tonejs-instruments/samples/guitar-electric/E3.mp3:0
+[   12600ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://nbrosowsky.github.io/tonejs-instruments/samples/guitar-electric/G4.mp3:0
+[   12617ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://nbrosowsky.github.io/tonejs-instruments/samples/guitar-electric/B3.mp3:0
+[   12617ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://nbrosowsky.github.io/tonejs-instruments/samples/guitar-electric/D4.mp3:0
+[   12644ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://nbrosowsky.github.io/tonejs-instruments/samples/guitar-electric/E4.mp3:0
+[   69203ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3210/favicon.ico:0

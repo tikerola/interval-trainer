@@ -8,6 +8,9 @@ export type Note = (typeof NOTES)[number];
 // Standard tuning open strings (low E to high E)
 export const OPEN_STRINGS: Note[] = ["E", "A", "D", "G", "B", "E"];
 
+// Spoken/display names for each string index, low E to high E
+export const STRING_LABELS = ["low E", "A", "D", "G", "B", "high E"];
+
 // Fretboard display range used throughout the app (matches the longest transcribed solo).
 export const FRET_COUNT = 17;
 
@@ -26,4 +29,12 @@ export function getNoteAtPosition(
   const octave = openOctave + Math.floor((openIndex + fretNumber) / 12);
 
   return { note, octave };
+}
+
+// Lowest fret (0–11) on the given string where targetNote occurs.
+export function findLowestFret(stringIndex: number, targetNote: Note): number {
+  for (let fret = 0; fret <= 11; fret++) {
+    if (getNoteAtPosition(stringIndex, fret).note === targetNote) return fret;
+  }
+  return 0;
 }

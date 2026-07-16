@@ -3,9 +3,13 @@
 import { useState, useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useExerciseStore } from "@/store/exerciseStore";
+import { useEarTrainerStore } from "@/store/earTrainerStore";
 import { NOTES } from "@/lib/music/notes";
 import { INTERVALS } from "@/lib/music/intervals";
 import type { Note } from "@/lib/music/notes";
+import EarTrainer from "./EarTrainer";
+
+type Mode = "practice" | "ear";
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -14,8 +18,12 @@ function formatTime(seconds: number): string {
 }
 
 export default function ExerciseHub() {
+  const [mode, setMode] = useState<Mode>("practice");
   const [showTarget, setShowTarget] = useState(false);
   const [timeLeft, setTimeLeft] = useState(120);
+
+  const earActive = useEarTrainerStore((s) => s.active);
+  const earStop = useEarTrainerStore((s) => s.stop);
 
   const {
     rootNote,
@@ -77,8 +85,25 @@ export default function ExerciseHub() {
   const timerColor =
     timeLeft <= 10 ? "text-red-400" : timeLeft <= 30 ? "text-orange-400" : "text-amber-300";
 
+  function switchMode(next: Mode) {
+    if (next === mode) return;
+    if (mode === "practice" && active) stop();
+    if (mode === "ear" && earActive) earStop();
+    setMode(next);
+  }
+
+  if (mode === "ear") {
+    return (
+      <div className="w-full max-w-5xl flex flex-col gap-3">
+        <ModeToggle mode={mode} onChange={switchMode} />
+        <EarTrainer />
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full max-w-5xl">
+    <div className="w-full max-w-5xl flex flex-col gap-3">
+      <ModeToggle mode={mode} onChange={switchMode} />
       <div className="rounded-xl border border-stone-700/60 bg-stone-900/80 px-6 py-5">
         <h2 className="text-xs font-semibold tracking-widest uppercase text-stone-400 mb-5">
           Interval Trainer
@@ -223,6 +248,30 @@ export default function ExerciseHub() {
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+  const options: { id: Mode; label: string }[] = [
+    { id: "practice", label: "Practice" },
+    { id: "ear", label: "Ear Training" },
+  ];
+  return (
+    <div className="inline-flex self-start rounded-lg border border-stone-700/60 bg-stone-900/60 p-1">
+      {options.map((o) => (
+        <button
+          key={o.id}
+          onClick={() => onChange(o.id)}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium tracking-wide transition-colors duration-150 ${
+            mode === o.id
+              ? "bg-amber-500 text-stone-900"
+              : "text-stone-400 hover:text-stone-200"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }
