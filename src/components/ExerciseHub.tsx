@@ -28,6 +28,7 @@ export default function ExerciseHub() {
   const {
     rootNote,
     intervalSemitones,
+    randomizeInterval,
     targetNote,
     active,
     points,
@@ -35,6 +36,7 @@ export default function ExerciseHub() {
     duration,
     setRootNote,
     setInterval,
+    setRandomizeInterval,
     setWindowWidth,
     setDuration,
     startExercise,
@@ -44,6 +46,7 @@ export default function ExerciseHub() {
     useShallow((s) => ({
       rootNote: s.rootNote,
       intervalSemitones: s.intervalSemitones,
+      randomizeInterval: s.randomizeInterval,
       targetNote: s.targetNote,
       active: s.active,
       points: s.points,
@@ -51,6 +54,7 @@ export default function ExerciseHub() {
       duration: s.duration,
       setRootNote: s.setRootNote,
       setInterval: s.setInterval,
+      setRandomizeInterval: s.setRandomizeInterval,
       setWindowWidth: s.setWindowWidth,
       setDuration: s.setDuration,
       startExercise: s.startExercise,
@@ -129,11 +133,20 @@ export default function ExerciseHub() {
           <div className="flex flex-col gap-1.5">
             <label className="text-xs text-stone-500 tracking-wide">Interval</label>
             <select
-              value={intervalSemitones}
-              onChange={(e) => setInterval(Number(e.target.value))}
+              value={randomizeInterval ? "random" : intervalSemitones}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "random") {
+                  setRandomizeInterval(true);
+                } else {
+                  setRandomizeInterval(false);
+                  setInterval(Number(v));
+                }
+              }}
               disabled={active}
               className="bg-stone-800 border border-stone-700 text-amber-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500/60 disabled:opacity-50 cursor-pointer min-w-[140px]"
             >
+              <option value="random">Random</option>
               {INTERVALS.map((i) => (
                 <option key={i.semitones} value={i.semitones}>{i.label}</option>
               ))}

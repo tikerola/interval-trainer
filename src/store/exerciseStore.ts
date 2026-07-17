@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Note } from "@/lib/music/notes";
 import { NOTES } from "@/lib/music/notes";
-import { getIntervalNote } from "@/lib/music/intervals";
+import { getIntervalNote, INTERVALS } from "@/lib/music/intervals";
 import {
   isCorrectExerciseAnswer,
   generateFretWindow,
@@ -13,6 +13,7 @@ export type { FretWindow };
 export interface ExerciseState {
   rootNote: Note;
   intervalSemitones: number;
+  randomizeInterval: boolean;
   targetNote: Note;
   active: boolean;
   stopped: boolean;
@@ -29,6 +30,7 @@ export interface ExerciseState {
 
   setRootNote: (note: Note) => void;
   setInterval: (semitones: number) => void;
+  setRandomizeInterval: (v: boolean) => void;
   setWindowWidth: (w: number) => void;
   setDuration: (s: number) => void;
   startExercise: () => void;
@@ -42,9 +44,14 @@ function randomDifferentNote(current: Note): Note {
   return others[Math.floor(Math.random() * others.length)];
 }
 
+function randomIntervalSemitones(): number {
+  return INTERVALS[Math.floor(Math.random() * INTERVALS.length)].semitones;
+}
+
 export const useExerciseStore = create<ExerciseState>((set, get) => ({
   rootNote: "C",
   intervalSemitones: 7,
+  randomizeInterval: false,
   targetNote: "G",
   active: false,
   stopped: false,
@@ -65,17 +72,21 @@ export const useExerciseStore = create<ExerciseState>((set, get) => ({
   setInterval: (semitones) =>
     set({ intervalSemitones: semitones, targetNote: getIntervalNote(get().rootNote, semitones) }),
 
+  setRandomizeInterval: (v) => set({ randomizeInterval: v }),
+
   setWindowWidth: (w) => set({ windowWidth: w }),
 
   setDuration: (s) => set({ duration: s }),
 
   startExercise: () => {
-    const { rootNote, intervalSemitones, windowWidth } = get();
-    const targetNote = getIntervalNote(rootNote, intervalSemitones);
+    const { rootNote, intervalSemitones, randomizeInterval, windowWidth } = get();
+    const semitones = randomizeInterval ? randomIntervalSemitones() : intervalSemitones;
+    const targetNote = getIntervalNote(rootNote, semitones);
     const fretWindow = generateFretWindow(targetNote, windowWidth);
     set({
       active: true,
       stopped: false,
+      intervalSemitones: semitones,
       targetNote,
       fretWindow,
       roundTransitioning: false,
@@ -106,10 +117,14 @@ export const useExerciseStore = create<ExerciseState>((set, get) => ({
       setTimeout(() => {
         if (!get().active) return;
         const newRoot = randomDifferentNote(get().rootNote);
-        const newTarget = getIntervalNote(newRoot, get().intervalSemitones);
+        const newSemitones = get().randomizeInterval
+          ? randomIntervalSemitones()
+          : get().intervalSemitones;
+        const newTarget = getIntervalNote(newRoot, newSemitones);
         const newWindow = generateFretWindow(newTarget, get().windowWidth);
         set({
           rootNote: newRoot,
+          intervalSemitones: newSemitones,
           targetNote: newTarget,
           fretWindow: newWindow,
           roundTransitioning: false,

@@ -20,11 +20,13 @@ export default function EarTrainer() {
   const {
     active,
     intervalSemitones,
+    randomizeInterval,
     timerSeconds,
     rootNote,
     stringIndex,
     timeLeft,
     setIntervalSemitones,
+    setRandomizeInterval,
     setTimerSeconds,
     start,
     stop,
@@ -32,11 +34,13 @@ export default function EarTrainer() {
     useShallow((s) => ({
       active: s.active,
       intervalSemitones: s.intervalSemitones,
+      randomizeInterval: s.randomizeInterval,
       timerSeconds: s.timerSeconds,
       rootNote: s.rootNote,
       stringIndex: s.stringIndex,
       timeLeft: s.timeLeft,
       setIntervalSemitones: s.setIntervalSemitones,
+      setRandomizeInterval: s.setRandomizeInterval,
       setTimerSeconds: s.setTimerSeconds,
       start: s.start,
       stop: s.stop,
@@ -57,11 +61,20 @@ export default function EarTrainer() {
           <div className="flex flex-col gap-1.5">
             <label className="text-xs text-stone-500 tracking-wide">Interval</label>
             <select
-              value={intervalSemitones}
-              onChange={(e) => setIntervalSemitones(Number(e.target.value))}
+              value={randomizeInterval ? "random" : intervalSemitones}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "random") {
+                  setRandomizeInterval(true);
+                } else {
+                  setRandomizeInterval(false);
+                  setIntervalSemitones(Number(v));
+                }
+              }}
               disabled={active}
               className="bg-stone-800 border border-stone-700 text-amber-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500/60 disabled:opacity-50 cursor-pointer min-w-[140px]"
             >
+              <option value="random">Random</option>
               {INTERVALS.map((i) => (
                 <option key={i.semitones} value={i.semitones}>{i.label}</option>
               ))}

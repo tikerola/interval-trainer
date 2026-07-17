@@ -99,7 +99,10 @@ export function useEarTrainerEngine() {
     setTimeLeft(-1);
 
     const interval = INTERVALS.find((i) => i.semitones === intervalSemitones);
-    const text = `${STRING_LABELS[stringIndex]} string, ${interval?.spoken ?? ""} of ${rootNote}`;
+    // "the" before a lone "A" forces TTS engines to read it as the note letter
+    // rather than the indefinite article — grammatically "the a" can't parse
+    // as article + noun, so it falls back to the letter name.
+    const text = `The ${STRING_LABELS[stringIndex]} string, ${interval?.spoken ?? ""} of the ${rootNote}`;
 
     const playAndStartTimer = async () => {
       if (tokenRef.current !== token) return;
