@@ -13,6 +13,11 @@ out/
 # Claude Code local settings (not project-level CLAUDE.md)
 .claude/settings.local.json
 
+# Playwright generated output (not needed for deployment; playwright.config.ts and e2e/ are kept)
+.playwright-mcp/
+playwright-report/
+test-results/
+
 # misc
 .DS_Store
 *.pem

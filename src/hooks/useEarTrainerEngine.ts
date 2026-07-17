@@ -6,23 +6,49 @@ import { useEarTrainerStore } from "@/store/earTrainerStore";
 import { getNoteAtPosition, findLowestFret, STRING_LABELS } from "@/lib/music/notes";
 import { INTERVALS } from "@/lib/music/intervals";
 
-// Drives the Ear Training round loop: speaks the prompt, plays the target note
-// once speech finishes, then (if a timer is set) counts down to the next round.
+// Drives the Fretboard Recall / Ear Training round loop: speaks the prompt,
+// plays the note(s) for the round once speech finishes, then (if a timer is
+// set) counts down to the next round. Chord Resolution mode only speaks the
+// string and the two chord roots — the scale-degree/chord-tone detail is
+// shown on the visual card instead, since spelling out every interval by
+// voice was too much to track in real time. Ear Training (scale) mode speaks
+// only the string and key, then plays the key's major triad as an arpeggio
+// followed by a blind 4-note major-scale run with no note names surfaced
+// anywhere — the actual ear-training exercise.
 export function useEarTrainerEngine() {
-  const { active, roundId, rootNote, stringIndex, targetNote, intervalSemitones, timerSeconds, setTimeLeft, nextRound } =
-    useEarTrainerStore(
-      useShallow((s) => ({
-        active: s.active,
-        roundId: s.roundId,
-        rootNote: s.rootNote,
-        stringIndex: s.stringIndex,
-        targetNote: s.targetNote,
-        intervalSemitones: s.intervalSemitones,
-        timerSeconds: s.timerSeconds,
-        setTimeLeft: s.setTimeLeft,
-        nextRound: s.nextRound,
-      }))
-    );
+  const {
+    active,
+    roundId,
+    mode,
+    rootNote,
+    targetChordRoot,
+    stringIndex,
+    targetNote,
+    runFrets,
+    resolutionFret,
+    keyFret,
+    intervalSemitones,
+    timerSeconds,
+    setTimeLeft,
+    nextRound,
+  } = useEarTrainerStore(
+    useShallow((s) => ({
+      active: s.active,
+      roundId: s.roundId,
+      mode: s.mode,
+      rootNote: s.rootNote,
+      targetChordRoot: s.targetChordRoot,
+      stringIndex: s.stringIndex,
+      targetNote: s.targetNote,
+      runFrets: s.runFrets,
+      resolutionFret: s.resolutionFret,
+      keyFret: s.keyFret,
+      intervalSemitones: s.intervalSemitones,
+      timerSeconds: s.timerSeconds,
+      setTimeLeft: s.setTimeLeft,
+      nextRound: s.nextRound,
+    }))
+  );
 
   const synthRef = useRef<{
     sampler: import("tone").Sampler | null;
@@ -102,21 +128,14 @@ export function useEarTrainerEngine() {
     // "the" before a lone "A" forces TTS engines to read it as the note letter
     // rather than the indefinite article — grammatically "the a" can't parse
     // as article + noun, so it falls back to the letter name.
-    const text = `The ${STRING_LABELS[stringIndex]} string, ${interval?.spoken ?? ""} of the ${rootNote}`;
+    const text =
+      mode === "progression"
+        ? `The ${STRING_LABELS[stringIndex]} string, from the ${rootNote} to the ${targetChordRoot}.`
+        : mode === "scale"
+        ? `The ${STRING_LABELS[stringIndex]} string, key of the ${rootNote}.`
+        : `The ${STRING_LABELS[stringIndex]} string, ${interval?.spoken ?? ""} of the ${rootNote}`;
 
-    const playAndStartTimer = async () => {
-      if (tokenRef.current !== token) return;
-      const Tone = await import("tone");
-      await Tone.start();
-      if (tokenRef.current !== token) return;
-
-      const fret = findLowestFret(stringIndex, targetNote);
-      const { octave } = getNoteAtPosition(stringIndex, fret);
-      const noteName = `${targetNote}${octave}`;
-      const { sampler, synth } = synthRef.current;
-      const player = samplerLoadedRef.current && sampler ? sampler : synth;
-      player?.triggerAttackRelease(noteName, "2n");
-
+    const startCountdown = () => {
       if (timerSeconds > 0) {
         setTimeLeft(timerSeconds);
         countdownIdRef.current = window.setInterval(() => {
@@ -130,6 +149,68 @@ export function useEarTrainerEngine() {
             setTimeLeft(remaining);
           }
         }, 1000);
+      }
+    };
+
+    const playAndStartTimer = async () => {
+      if (tokenRef.current !== token) return;
+      const Tone = await import("tone");
+      await Tone.start();
+      if (tokenRef.current !== token) return;
+
+      const { sampler, synth } = synthRef.current;
+      const player = samplerLoadedRef.current && sampler ? sampler : synth;
+
+      const playFret = (fret: number, duration: string) => {
+        const { note, octave } = getNoteAtPosition(stringIndex, fret);
+        player?.triggerAttackRelease(`${note}${octave}`, duration);
+      };
+
+      if (mode === "progression") {
+        const RUN_STEP_MS = 600;
+        const RESOLUTION_GAP_MS = 500;
+        runFrets.forEach((fret, i) => {
+          window.setTimeout(() => {
+            if (tokenRef.current !== token) return;
+            playFret(fret, "4n");
+          }, i * RUN_STEP_MS);
+        });
+        window.setTimeout(() => {
+          if (tokenRef.current !== token) return;
+          playFret(resolutionFret, "2n");
+          startCountdown();
+        }, runFrets.length * RUN_STEP_MS + RESOLUTION_GAP_MS);
+      } else if (mode === "scale") {
+        const ARPEGGIO_STEP_MS = 90;
+        const ARPEGGIO_GAP_MS = 500;
+        const RUN_STEP_MS = 550;
+
+        // Root, major 3rd, perfect 5th, octave — establishes the key's major
+        // tonality as a quick strum before the blind run, so the run's notes
+        // can be judged relative to the key.
+        const arpeggioFrets = [keyFret, keyFret + 4, keyFret + 7, keyFret + 12];
+        arpeggioFrets.forEach((fret, i) => {
+          window.setTimeout(() => {
+            if (tokenRef.current !== token) return;
+            playFret(fret, "8n");
+          }, i * ARPEGGIO_STEP_MS);
+        });
+
+        const runStartDelay = arpeggioFrets.length * ARPEGGIO_STEP_MS + ARPEGGIO_GAP_MS;
+        runFrets.forEach((fret, i) => {
+          window.setTimeout(() => {
+            if (tokenRef.current !== token) return;
+            playFret(fret, "4n");
+          }, runStartDelay + i * RUN_STEP_MS);
+        });
+        window.setTimeout(() => {
+          if (tokenRef.current !== token) return;
+          startCountdown();
+        }, runStartDelay + runFrets.length * RUN_STEP_MS + 300);
+      } else {
+        const fret = findLowestFret(stringIndex, targetNote);
+        playFret(fret, "2n");
+        startCountdown();
       }
     };
 

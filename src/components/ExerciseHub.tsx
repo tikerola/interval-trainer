@@ -268,7 +268,7 @@ export default function ExerciseHub() {
 function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
   const options: { id: Mode; label: string }[] = [
     { id: "practice", label: "Practice" },
-    { id: "ear", label: "Ear Training" },
+    { id: "ear", label: "Fretboard Recall" },
   ];
   return (
     <div className="inline-flex self-start rounded-lg border border-stone-700/60 bg-stone-900/60 p-1">
