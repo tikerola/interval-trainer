@@ -53,8 +53,12 @@ function randomDifferentStringIndex(current: number): number {
   return others[Math.floor(Math.random() * others.length)];
 }
 
+// Single Note mode never quizzes the octave — an octave "interval" is just
+// the same note name again, which adds nothing to ear-train against.
+export const SINGLE_NOTE_INTERVALS = INTERVALS.filter((i) => i.label !== "Octave");
+
 function randomIntervalSemitones(): number {
-  return INTERVALS[Math.floor(Math.random() * INTERVALS.length)].semitones;
+  return SINGLE_NOTE_INTERVALS[Math.floor(Math.random() * SINGLE_NOTE_INTERVALS.length)].semitones;
 }
 
 function randomChordToneSemitones(): number {

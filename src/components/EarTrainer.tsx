@@ -6,6 +6,7 @@ import {
   useEarTrainerStore,
   CHORD_TONES,
   PENTATONIC_DEGREES,
+  SINGLE_NOTE_INTERVALS,
   type EarTrainerMode,
 } from "@/store/earTrainerStore";
 import { useEarTrainerEngine } from "@/hooks/useEarTrainerEngine";
@@ -168,7 +169,7 @@ export default function EarTrainer() {
                 className="bg-stone-800 border border-stone-700 text-amber-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500/60 disabled:opacity-50 cursor-pointer min-w-[140px]"
               >
                 <option value="random">Random</option>
-                {INTERVALS.map((i) => (
+                {SINGLE_NOTE_INTERVALS.map((i) => (
                   <option key={i.semitones} value={i.semitones}>{i.label}</option>
                 ))}
               </select>
