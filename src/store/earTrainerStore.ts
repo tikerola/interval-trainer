@@ -11,11 +11,12 @@ export type RunDirection = "up" | "down";
 const MAJOR_SCALE_OFFSETS = [0, 2, 4, 5, 7, 9, 11];
 
 // Dominant-7 chord tones available as the resolution target in Chord Resolution mode.
+// `short` is the terse form spoken at the end of the round prompt, e.g. "(7th)".
 export const CHORD_TONES = [
-  { label: "Root", degree: "1", semitones: 0, spoken: "the root" },
-  { label: "Major 3rd", degree: "3", semitones: 4, spoken: "major third" },
-  { label: "Perfect 5th", degree: "5", semitones: 7, spoken: "perfect fifth" },
-  { label: "Minor 7th", degree: "b7", semitones: 10, spoken: "minor seventh" },
+  { label: "Root", degree: "1", semitones: 0, spoken: "the root", short: "root" },
+  { label: "Major 3rd", degree: "3", semitones: 4, spoken: "major third", short: "3rd" },
+  { label: "Perfect 5th", degree: "5", semitones: 7, spoken: "perfect fifth", short: "5th" },
+  { label: "Minor 7th", degree: "b7", semitones: 10, spoken: "minor seventh", short: "7th" },
 ] as const;
 
 // Major pentatonic scale degrees (1, 2, 3, 5, 6) as semitone offsets from the

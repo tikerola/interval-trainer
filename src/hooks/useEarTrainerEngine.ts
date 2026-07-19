@@ -5,16 +5,17 @@ import { useShallow } from "zustand/react/shallow";
 import { useEarTrainerStore } from "@/store/earTrainerStore";
 import { getNoteAtPosition, findLowestFret, STRING_LABELS } from "@/lib/music/notes";
 import { INTERVALS } from "@/lib/music/intervals";
+import { CHORD_TONES } from "@/store/earTrainerStore";
 
 // Drives the Fretboard Recall / Ear Training round loop: speaks the prompt,
 // plays the note(s) for the round once speech finishes, then (if a timer is
-// set) counts down to the next round. Chord Resolution mode only speaks the
-// string and the two chord roots — the scale-degree/chord-tone detail is
-// shown on the visual card instead, since spelling out every interval by
-// voice was too much to track in real time. Ear Training (scale) mode speaks
-// only the string and key, then plays the key's major triad as an arpeggio
-// followed by a blind 4-note major-scale run with no note names surfaced
-// anywhere — the actual ear-training exercise.
+// set) counts down to the next round. Chord Resolution mode speaks the
+// string, the two chord roots, and the resolution chord tone (e.g. "from
+// the A to the D, 7th") — the run's scale-degree detail is still too dense
+// to track by ear and stays on the visual card only. Ear Training (scale)
+// mode speaks only the string and key, then plays the key's major triad as
+// an arpeggio followed by a blind 4-note major-scale run with no note names
+// surfaced anywhere — the actual ear-training exercise.
 export function useEarTrainerEngine() {
   const {
     active,
@@ -28,6 +29,7 @@ export function useEarTrainerEngine() {
     resolutionFret,
     keyFret,
     intervalSemitones,
+    chordToneSemitones,
     timerSeconds,
     setTimeLeft,
     nextRound,
@@ -44,6 +46,7 @@ export function useEarTrainerEngine() {
       resolutionFret: s.resolutionFret,
       keyFret: s.keyFret,
       intervalSemitones: s.intervalSemitones,
+      chordToneSemitones: s.chordToneSemitones,
       timerSeconds: s.timerSeconds,
       setTimeLeft: s.setTimeLeft,
       nextRound: s.nextRound,
@@ -125,12 +128,13 @@ export function useEarTrainerEngine() {
     setTimeLeft(-1);
 
     const interval = INTERVALS.find((i) => i.semitones === intervalSemitones);
+    const chordTone = CHORD_TONES.find((t) => t.semitones === chordToneSemitones);
     // "the" before a lone "A" forces TTS engines to read it as the note letter
     // rather than the indefinite article — grammatically "the a" can't parse
     // as article + noun, so it falls back to the letter name.
     const text =
       mode === "progression"
-        ? `The ${STRING_LABELS[stringIndex]} string, from the ${rootNote} to the ${targetChordRoot}.`
+        ? `The ${STRING_LABELS[stringIndex]} string, from the ${rootNote} to the ${targetChordRoot}, ${chordTone?.short ?? ""}.`
         : mode === "scale"
         ? `The ${STRING_LABELS[stringIndex]} string, key of the ${rootNote}.`
         : `The ${STRING_LABELS[stringIndex]} string, ${interval?.spoken ?? ""} of the ${rootNote}`;
